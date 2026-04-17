@@ -48,7 +48,6 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [activeCategory, setActiveCategory] = useState(INITIAL_CATEGORIES[0]);
   const [view, setView] = useState('shop'); 
-  const [agreedToTerms, setAgreedToTerms] = useState({ t1: false, t2: false, t3: false });
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -58,10 +57,8 @@ export default function App() {
   const [newTopping, setNewTopping] = useState({ name: '', price: '' });
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [] });
-  const [isCopied, setIsCopied] = useState(false);
-  const [showQrModal, setShowQrModal] = useState(false); 
-  const [lineProfile, setLineProfile] = useState(null);
   const [slipImage, setSlipImage] = useState('');
+  const [lineProfile, setLineProfile] = useState(null);
 
   useEffect(() => {
     let cid = localStorage.getItem('happycow_cid') || 'cus_' + Math.random().toString(36).substr(2, 9);
@@ -99,42 +96,34 @@ export default function App() {
     try {
       await addDoc(collection(db, 'orders'), orderData);
       
-      // --- สร้างบิล Flex Message สำหรับส่งผ่าน Chatbot ---
       const flexMessage = {
-        type: "flex", altText: "ใบเสร็จออร์เดอร์ใหม่ - วัวนมอารมณ์ดี",
+        type: "flex", altText: "ใบเสร็จจากร้านวัวนมอารมณ์ดี",
         contents: {
           type: "bubble",
-          header: { type: "box", layout: "vertical", backgroundColor: "#A67C52", contents: [ { type: "text", text: "RECEIPT / ใบเสร็จ", color: "#ffffff", weight: "bold", size: "sm" }, { type: "text", text: "ร้านวัวนมอารมณ์ดี", color: "#ffffff", weight: "bold", size: "xl", margin: "md" } ] },
+          header: { type: "box", layout: "vertical", backgroundColor: "#A67C52", contents: [ { type: "text", text: "ร้านวัวนมอารมณ์ดี", color: "#ffffff", weight: "bold", size: "lg" } ] },
           body: {
             type: "box", layout: "vertical", contents: [
-              { type: "text", text: `ขอบคุณคุณ ${lineProfile?.displayName || 'ลูกค้า'}`, weight: "bold", size: "md", color: "#3D2C1E" },
-              { type: "separator", margin: "md", color: "#eeeeee" },
-              ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [ { type: "text", text: `${i.qty}x ${i.name} (${i.isBlended?'ปั่น':'เย็น'})`, size: "xs", color: "#555555", flex: 3, wrap: true }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" } ] })),
-              { type: "separator", margin: "md", color: "#eeeeee" },
-              { type: "box", layout: "horizontal", margin: "md", contents: [ { type: "text", text: "ยอดสุทธิ", weight: "bold", size: "md" }, { type: "text", text: `฿${finalTotal}`, align: "end", weight: "bold", color: "#A67C52", size: "lg" } ] },
-              { type: "text", text: `ที่อยู่: ${customerInfo.address}`, size: "xxs", color: "#aaaaaa", margin: "md", wrap: true }
+              { type: "text", text: `ขอบคุณคุณ ${lineProfile?.displayName || 'ลูกค้า'}`, weight: "bold", size: "sm" },
+              { type: "separator", margin: "md" },
+              ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [ { type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1 } ] })),
+              { type: "separator", margin: "md" },
+              { type: "box", layout: "horizontal", margin: "md", contents: [ { type: "text", text: "รวมทั้งสิ้น", weight: "bold" }, { type: "text", text: `฿${finalTotal}`, align: "end", weight: "bold", color: "#A67C52" } ] }
             ]
-          },
-          footer: { type: "box", layout: "vertical", contents: [ { type: "text", text: "ได้รับออร์เดอร์แล้ว กำลังเตรียมจัดส่งครับ 🐮", align: "center", size: "xs", color: "#888888" } ] }
+          }
         }
       };
 
-      // --- ยิง API ไปที่ /api/sendLine เพื่อให้บอทส่งข้อความทักลูกค้า ---
       if (myCustomerId && !myCustomerId.startsWith('cus_')) {
-        try {
-          await fetch('/api/sendLine', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: myCustomerId, flexMessage })
-          });
-        } catch (e) { console.error("Chatbot Error:", e); }
+        await fetch('/api/sendLine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: myCustomerId, flexMessage })
+        });
       }
 
       setCart([]); setSlipImage(''); setView('myOrders');
-      // ปิดหน้า LIFF เมื่อสั่งเสร็จ
       if (window.liff && window.liff.isInClient()) window.liff.closeWindow();
-
-    } catch (e) { alert("เกิดข้อผิดพลาด: " + e.message); }
+    } catch (e) { alert(e.message); }
     setIsLoading(false);
   };
 
@@ -178,10 +167,7 @@ export default function App() {
           <div className="space-y-4">
              {cart.map(i => (
                <div key={i.cartItemId} className="flex justify-between items-center p-4 bg-creamy/20 rounded-2xl">
-                 <div className="flex-1">
-                   <p className="font-bold text-sm">{i.qty}x {i.name}</p>
-                   <p className="text-[10px] text-dark/40 uppercase font-bold">{i.isBlended?'ปั่น':'เย็น'} • หวาน {i.sweetness}</p>
-                 </div>
+                 <div className="flex-1"><p className="font-bold text-sm">{i.qty}x {i.name}</p><p className="text-[10px] text-dark/40 uppercase font-bold">{i.isBlended?'ปั่น':'เย็น'} • หวาน {i.sweetness}</p></div>
                  <div className="text-right font-bold text-oak">฿{i.price * i.qty}</div>
                </div>
              ))}
@@ -189,16 +175,16 @@ export default function App() {
           </div>
           {cart.length > 0 && (
             <div className="space-y-6 pt-6 border-t border-dark/5">
-              <div><label className="block text-sm font-bold mb-3 px-2">ที่อยู่จัดส่ง</label><textarea placeholder="เลขที่ห้อง / ชื่อตึก / จุดสังเกต..." value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} className="w-full p-5 rounded-3xl bg-creamy/30 border-none h-32 text-sm focus:ring-2 focus:ring-oak" /></div>
+              <div><label className="block text-sm font-bold mb-3 px-2">ที่อยู่จัดส่ง</label><textarea placeholder="ระบุที่อยู่..." value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} className="w-full p-5 rounded-3xl bg-creamy/30 border-none h-32 text-sm focus:ring-2 focus:ring-oak" /></div>
               <div className="bg-creamy/30 p-6 rounded-[2.5rem] text-center border-2 border-dashed border-dark/10">
                 <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
                 <div className="flex justify-center mb-6">
                   <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${settings.promptpayNo}:${getTotalPrice()}`} className="w-48 h-48 rounded-2xl shadow-lg bg-white p-3" />
                 </div>
-                <label className="cursor-pointer bg-dark text-white py-4 px-8 rounded-2xl text-xs font-bold inline-flex items-center gap-2 shadow-xl active:scale-95 transition-all"><Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แตะเพื่อแนบสลิป'}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files[0]; if(!f) return; const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(f); }} /></label>
-                {slipImage && <div className="mt-4 relative inline-block"><img src={slipImage} className="h-32 rounded-xl shadow-md border-2 border-white" /><button onClick={() => setSlipImage('')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X size={14}/></button></div>}
+                <label className="cursor-pointer bg-dark text-white py-4 px-8 rounded-2xl text-xs font-bold inline-flex items-center gap-2 shadow-xl active:scale-95 transition-all"><Upload size={18}/> แนบสลิป<input type="file" accept="image/*" className="hidden" onChange={e => { const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(e.target.files[0]); }} /></label>
+                {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-sm" />}
               </div>
-              <button onClick={handleCheckout} disabled={isLoading || !slipImage} className={`w-full py-5 rounded-[2rem] font-bold text-lg shadow-2xl transition-all active:scale-95 ${slipImage ? 'bg-oak text-white shadow-oak/30' : 'bg-dark/10 text-dark/30'}`}>สั่งซื้อและส่งบิลไปที่ LINE</button>
+              <button onClick={handleCheckout} disabled={isLoading || !slipImage} className={`w-full py-5 rounded-[2rem] font-bold text-lg shadow-2xl transition-all ${slipImage ? 'bg-oak text-white shadow-oak/30' : 'bg-dark/10 text-dark/30'}`}>สั่งซื้อและส่งบิลไปที่ LINE</button>
             </div>
           )}
         </div>
@@ -212,24 +198,47 @@ export default function App() {
              {orders.filter(o => o.customerId === myCustomerId).map(o => (
                <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-dark/5 transition-all hover:shadow-xl">
                   <div className="flex justify-between items-start mb-4 pb-4 border-b border-dark/5">
-                    <div><span className="text-[10px] font-bold text-oak uppercase tracking-widest">บิล #{o.id.slice(0,8)}</span><p className="text-xs font-bold text-dark/60 mt-1 uppercase">{o.status === 'pending' ? 'รอรับออร์เดอร์' : o.status}</p></div>
+                    <div><span className="text-[10px] font-bold text-oak uppercase tracking-widest">บิล #{o.id.slice(0,8)}</span><p className="text-xs font-bold text-dark/60 mt-1 uppercase">{o.status}</p></div>
                     <div className="text-2xl font-serif font-bold text-dark">฿{o.total}</div>
                   </div>
-                  <div className="space-y-1">{(o.items || []).map((item, idx) => <p key={idx} className="text-[11px] font-bold text-dark/40">{item.qty}x {item.name} ({item.isBlended?'ปั่น':'เย็น'})</p>)}</div>
+                  <div className="space-y-1">{(o.items || []).map((item, idx) => <p key={idx} className="text-[11px] font-bold text-dark/40">{item.qty}x {item.name}</p>)}</div>
                </div>
              ))}
-             {orders.filter(o => o.customerId === myCustomerId).length === 0 && <div className="py-24 text-center opacity-10 font-serif italic">คุณยังไม่มีประวัติการสั่งซื้อ</div>}
            </div>
         </div>
       )}
 
-      {/* Admin Login UI */}
+      {/* Admin Logic */}
       {view === 'adminLogin' && (
         <div className="flex-1 flex items-center justify-center p-10">
           <div className="w-full max-w-sm text-center space-y-8">
             <h2 className="text-4xl font-serif font-bold">Admin</h2>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full p-5 rounded-3xl text-center text-2xl font-serif bg-white shadow-inner" placeholder="••••••" />
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full p-5 rounded-3xl text-center text-2xl font-serif bg-white shadow-inner" placeholder="รหัสผ่าน" />
             <button onClick={() => adminPassword === '570402' ? setIsAdminLoggedIn(true) || setView('admin') : alert('รหัสผิดครับ')} className="w-full bg-dark text-white py-5 rounded-[2rem] font-bold shadow-2xl">เข้าสู่ระบบหลังบ้าน</button>
+          </div>
+        </div>
+      )}
+
+      {optionModalItem && (
+        <div className="fixed inset-0 bg-dark/60 z-[60] flex items-end justify-center backdrop-blur-sm">
+          <div className="bg-white rounded-t-[3rem] w-full max-w-md p-8 space-y-8 animate-in slide-in-from-bottom-full duration-300">
+            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-3 bg-creamy/20 rounded-2xl"><X/></button></div>
+            <div className="space-y-6">
+              <div><label className="text-sm font-bold block mb-3">ความหวาน</label><div className="grid grid-cols-5 gap-2">{SWEETNESS_LEVELS.map(l => <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3 rounded-2xl text-[10px] font-bold border ${tempOptions.sweetness === l ? 'bg-dark text-white border-dark' : 'bg-white text-dark/30 border-dark/5'}`}>{l}</button>)}</div></div>
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-5 rounded-3xl border-2 font-bold flex flex-col items-center gap-2 ${!tempOptions.isBlended ? 'border-oak bg-creamy/10' : 'border-transparent opacity-40'}`}><Coffee/><span className="text-[10px]">เย็น</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-5 rounded-3xl border-2 font-bold flex flex-col items-center gap-2 ${tempOptions.isBlended ? 'border-oak bg-creamy/10' : 'border-transparent opacity-40'}`}><Zap/><span className="text-[10px]">ปั่น</span></button>
+              </div>
+            </div>
+            <button onClick={() => {
+              const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}`;
+              setCart(prev => {
+                const ex = prev.find(i => i.cartItemId === cartId);
+                if (ex) return prev.map(i => i.cartItemId === cartId ? {...i, qty: i.qty+1} : i);
+                return [...prev, {...optionModalItem, cartItemId: cartId, ...tempOptions, qty: 1}];
+              });
+              setOptionModalItem(null);
+            }} className="w-full py-5 bg-dark text-white rounded-[2rem] font-bold text-lg shadow-xl">เพิ่มลงตะกร้า • ฿{optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 0) : 0)}</button>
           </div>
         </div>
       )}

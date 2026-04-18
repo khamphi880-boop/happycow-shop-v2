@@ -33,9 +33,13 @@ export default function App() {
   const [slipImage, setSlipImage] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   
-  // สเตทสำหรับเปิด/ปิดหน้าต่างแอดมิน
+  // สเตทสำหรับเปิด/ปิดหน้าต่างแอดมิน และจัดการแท็บ
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const [adminTab, setAdminTab] = useState('orders'); // 'orders' | 'menus'
+  
+  // สเตทสำหรับจัดการเมนูใหม่
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
   
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false });
@@ -85,6 +89,37 @@ export default function App() {
     alert("สร้างเมนูแนะนำสำเร็จครับ!");
   };
 
+  // ฟังก์ชันเพิ่มเมนู
+  const handleAddMenu = async () => {
+    if (!newMenu.name || !newMenu.price || !newMenu.image) {
+      return alert('กรุณากรอกข้อมูลให้ครบถ้วนครับ');
+    }
+    try {
+      await addDoc(collection(db, 'menus'), {
+        name: newMenu.name,
+        price: Number(newMenu.price),
+        category: newMenu.category,
+        image: newMenu.image,
+        blendPrice: Number(newMenu.blendPrice)
+      });
+      alert('เพิ่มเมนูสำเร็จ! 🐮');
+      setNewMenu({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+  };
+
+  // ฟังก์ชันลบเมนู
+  const handleDeleteMenu = async (id) => {
+    if(window.confirm('ต้องการลบเมนูนี้ใช่หรือไม่?')) {
+      try {
+        await deleteDoc(doc(db, 'menus', id));
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+  };
+
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) {
       return alert("เพื่อความถูกต้องในการส่งบิลใบเสร็จ กรุณากดปุ่ม 'ล็อกอิน LINE' สีเขียวด้านบนก่อนทำการสั่งซื้อนะครับ 🐮");
@@ -120,7 +155,6 @@ export default function App() {
         }
       };
 
-      // ส่ง API ให้ LINE พร้อมดักจับ Error โชว์ให้รู้สาเหตุที่แท้จริง
       const response = await fetch('/api/sendLine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
@@ -129,7 +163,7 @@ export default function App() {
       const resultData = await response.json();
 
       if (!response.ok || !resultData.success) {
-        alert("⚠️ ออร์เดอร์เข้าแล้ว แต่บิลไม่เด้ง!\n\nสาเหตุที่เป็นไปได้:\n1. คุณยังไม่ได้ 'เพิ่มเพื่อน' กับ LINE บอทของร้าน (บอทเลยทักไม่ได้)\n2. API Error: " + JSON.stringify(resultData));
+        alert("⚠️ ออร์เดอร์เข้าแล้ว แต่บิลไม่เด้ง!\n\nสาเหตุ: ลูกค้ายังไม่ได้ 'เพิ่มเพื่อน' กับ LINE บอทของร้าน (บอทจึงทักไปไม่ได้ครับ)\nแนะนำให้แอดเพื่อนแล้วลองใหม่ครับ");
       } else {
         alert("สั่งซื้อสำเร็จ! บิลถูกส่งเข้าแชท LINE แล้วครับ 🐮");
       }
@@ -172,7 +206,6 @@ export default function App() {
            </div>
         </div>
         <div className="flex gap-2">
-          {/* เปลี่ยนให้ปุ่มฟันเฟืองเรียก Modal ขึ้นมาแทนการสลับหน้า */}
           <button onClick={() => setShowAdminModal(true)} className="p-2 text-gray-300 hover:text-gray-500"><Settings size={18}/></button>
           <button onClick={() => setView('myOrders')} className="p-2 text-gray-400 hover:text-gray-600"><ClipboardList/></button>
           <button onClick={() => setView('cart')} className="relative p-2 bg-[#3D2C1E] text-white rounded-xl shadow-lg w-10 h-10 flex items-center justify-center">
@@ -290,30 +323,75 @@ export default function App() {
 
         {/* หน้า 5: ระบบแอดมิน */}
         {view === 'admin' && (
-          <div className="p-6 space-y-6 flex-1 bg-white min-h-screen">
-            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
-            <h2 className="text-2xl font-serif font-bold">รายการสั่งซื้อทั้งหมด</h2>
-            <div className="space-y-4">
-              {orders.map(o => (
-                <div key={o.id} className="border border-gray-100 p-4 rounded-2xl shadow-sm">
-                  <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName || 'ลูกค้า'}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
-                  <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
-                  {/* แก้ไขข้อผิดพลาดตรงนี้ โดยเพิ่ม (o.items || []) ป้องกัน array ว่าง */}
-                  <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
-                    {(o.items || []).map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => window.open(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>
-                    <button onClick={async () => await deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-500 px-4 rounded-xl text-xs font-bold"><Trash2 size={16}/></button>
-                  </div>
-                </div>
-              ))}
+          <div className="p-6 flex-1 bg-white min-h-screen">
+            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
+            <h2 className="text-2xl font-serif font-bold mb-6">ระบบจัดการหลังร้าน</h2>
+            
+            {/* แท็บเมนูแอดมิน */}
+            <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6">
+              <button onClick={() => setAdminTab('orders')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === 'orders' ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500'}`}>ดูออร์เดอร์</button>
+              <button onClick={() => setAdminTab('menus')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === 'menus' ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500'}`}>จัดการเมนู</button>
             </div>
+
+            {/* ส่วนที่ 1: รายการสั่งซื้อ */}
+            {adminTab === 'orders' && (
+              <div className="space-y-4">
+                {orders.map(o => (
+                  <div key={o.id} className="border border-gray-100 p-4 rounded-2xl shadow-sm">
+                    <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName || 'ลูกค้า'}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
+                    <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
+                    <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
+                      {(o.items || []).map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => window.open(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>
+                      <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-500 px-4 rounded-xl text-xs font-bold"><Trash2 size={16}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ส่วนที่ 2: ระบบจัดการเมนู */}
+            {adminTab === 'menus' && (
+              <div className="space-y-8">
+                {/* ฟอร์มเพิ่มเมนู */}
+                <div className="bg-gray-50 p-5 rounded-3xl border-2 border-dashed border-gray-200 space-y-4">
+                  <h3 className="font-bold text-sm text-[#A67C52]">เพิ่มเมนูใหม่</h3>
+                  <input type="text" placeholder="ชื่อเมนู" className="w-full p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="ราคา (บาท)" className="w-1/2 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
+                    <select className="w-1/2 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
+                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <input type="text" placeholder="ลิงก์รูปภาพ (URL นามสกุล .jpg, .png)" className="w-full p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.image} onChange={e => setNewMenu({...newMenu, image: e.target.value})} />
+                  <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md">บันทึกเมนูใหม่</button>
+                </div>
+
+                {/* รายการเมนูที่มีอยู่ */}
+                <div className="space-y-3">
+                   <h3 className="font-bold text-sm text-[#3D2C1E]">เมนูทั้งหมด ({menuItems.length} รายการ)</h3>
+                   {menuItems.map(item => (
+                     <div key={item.id} className="flex justify-between items-center bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+                       <div className="flex items-center gap-3">
+                         <img src={item.image} className="w-12 h-12 rounded-xl object-cover" alt={item.name} />
+                         <div>
+                           <p className="font-bold text-sm line-clamp-1">{item.name}</p>
+                           <p className="text-xs text-gray-400">฿{item.price} • {item.category}</p>
+                         </div>
+                       </div>
+                       <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>
+                     </div>
+                   ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
 
-      {/* --- Modal กรอกรหัสแอดมิน (ลอยทับทุกอย่างบนหน้าจอ แก้ปัญหาแอป LINE บล็อกการเปลี่ยนหน้า) --- */}
+      {/* --- Modal กรอกรหัสแอดมิน --- */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">

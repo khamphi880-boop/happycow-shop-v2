@@ -38,8 +38,9 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('orders'); // 'orders' | 'menus' | 'settings'
   
   // สเตทสำหรับตั้งค่าร้าน
-  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678' });
+  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
+  const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
   // สเตทสำหรับจัดการเมนูใหม่
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
@@ -74,13 +75,15 @@ export default function App() {
       setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp));
     });
 
-    // โหลดข้อมูลการตั้งค่าร้าน (พร้อมเพย์)
+    // โหลดข้อมูลการตั้งค่าร้าน (พร้อมเพย์ และ รูป QR Code)
     const unsubSettings = onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         setStoreSettings(docSnap.data());
         setEditPromptPay(docSnap.data().promptPayNo || '0812345678');
+        setEditQrCodeImage(docSnap.data().qrCodeImage || '');
       } else {
         setEditPromptPay('0812345678');
+        setEditQrCodeImage('');
       }
     });
 
@@ -285,7 +288,13 @@ export default function App() {
                 
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] text-center border-2 border-dashed border-gray-200">
                   <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl shadow-md" alt="QR Code" />
+                  
+                  {/* แสดงรูป QR Code ที่อัปโหลด หรือ สร้างอัตโนมัติถ้าไม่ได้อัปโหลด */}
+                  {storeSettings.qrCodeImage ? (
+                    <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl shadow-md object-contain" alt="QR Code ของร้าน" />
+                  ) : (
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl shadow-md" alt="QR Code สร้างอัตโนมัติ" />
+                  )}
                   
                   <div className="flex items-center justify-center gap-2 mb-6">
                     <p className="text-xs text-gray-500 font-bold">พร้อมเพย์: {storeSettings.promptPayNo}</p>
@@ -420,16 +429,38 @@ export default function App() {
               <div className="space-y-8">
                 <div className="bg-gray-50 p-5 rounded-3xl border-2 border-dashed border-gray-200 space-y-4">
                   <h3 className="font-bold text-sm text-[#A67C52]">ตั้งค่าช่องทางชำระเงิน</h3>
+                  
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block font-bold">หมายเลขพร้อมเพย์ (เบอร์โทร หรือ บัตรประชาชน)</label>
                     <input type="text" placeholder="เช่น 0812345678" className="w-full p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} />
                   </div>
+
+                  <div className="pt-2">
+                    <label className="text-xs text-gray-500 mb-2 block font-bold">อัปโหลดรูป QR Code ของร้าน (ถ้ามี)</label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex-1 cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all">
+                        <Upload size={16}/> {editQrCodeImage ? 'เปลี่ยนรูป QR Code' : 'เลือกรูปจากเครื่อง'}
+                        <input type="file" accept="image/*" className="hidden" onChange={e => {
+                          const file = e.target.files[0];
+                          if(file) {
+                            const fr = new FileReader();
+                            fr.onload = (ev) => setEditQrCodeImage(ev.target.result);
+                            fr.readAsDataURL(file);
+                          }
+                        }} />
+                      </label>
+                      {editQrCodeImage && <img src={editQrCodeImage} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-gray-100" alt="QR Preview" />}
+                      {editQrCodeImage && <button onClick={() => setEditQrCodeImage('')} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2">*หากอัปโหลดรูป ระบบจะแสดงรูปนี้แทนการสร้าง QR Code อัตโนมัติ</p>
+                  </div>
+
                   <button onClick={async () => {
                     try {
-                      await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay }, { merge: true });
-                      alert('อัปเดตหมายเลขพร้อมเพย์สำเร็จ! 🐮');
+                      await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true });
+                      alert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮');
                     } catch(e) { alert("Error: " + e.message); }
-                  }} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md">บันทึกการตั้งค่า</button>
+                  }} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4">บันทึกการตั้งค่า</button>
                 </div>
               </div>
             )}

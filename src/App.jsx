@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -15,7 +15,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const LIFF_ID = "2009828681-C1cb8QC3"; // ไอดีล่าสุดที่เชื่อมต่อบอทสำเร็จ
+const LIFF_ID = "2009828681-C1cb8QC3"; 
 
 const CATEGORIES = ['นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
@@ -45,11 +45,11 @@ export default function App() {
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // เพิ่มเมนู
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
+  // จัดการเมนู (เพิ่ม hasFreePearl)
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
   
   const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false });
+  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
@@ -102,7 +102,13 @@ export default function App() {
         ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice)
       });
       alert('เพิ่มเมนูสำเร็จ! 🐮');
-      setNewMenu({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
+      setNewMenu({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
+    } catch (e) { alert(e.message); }
+  };
+
+  const toggleFreePearl = async (id, currentStatus) => {
+    try {
+      await updateDoc(doc(db, 'menus', id), { hasFreePearl: !currentStatus });
     } catch (e) { alert(e.message); }
   };
 
@@ -133,7 +139,6 @@ export default function App() {
     try {
       await addDoc(collection(db, 'orders'), orderData);
       
-      // สร้าง Flex Message ฉบับปรับปรุงใหม่ (บอกที่อยู่ หมายเหตุ และรายละเอียด เย็น/ปั่น)
       const flexMessage = {
         type: "flex", altText: "ใบเสร็จจากร้านวัวนมอารมณ์ดี",
         contents: {
@@ -159,7 +164,7 @@ export default function App() {
                 type: "box", layout: "vertical", margin: "sm", 
                 contents: [
                   { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-                  { type: "text", text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness})`, size: "xxs", color: "#888888", margin: "xs" }
+                  { type: "text", text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
                 ]
               })),
               { type: "separator", margin: "md" },
@@ -215,7 +220,7 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-[50] bg-white/95 p-4 flex justify-between items-center border-b border-[#A67C52]/10 shadow-sm">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('shop')}>
-           {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
+           {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
              {(lineProfile.userId || '').startsWith('guest_') ? (
@@ -246,7 +251,8 @@ export default function App() {
             </div>
             <div className="p-5 grid grid-cols-2 gap-5">
               {menuItems.filter(i => i.category === activeCategory).map(item => (
-                <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer">
+                <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
+                  {item.hasFreePearl && <div className="absolute top-2 right-2 bg-orange-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10 flex items-center gap-0.5"><Star size={8} fill="white"/> แถมมุกฟรี</div>}
                   <div className="aspect-square bg-gray-50"><img src={item.image} className="w-full h-full object-cover" alt={item.name} /></div>
                   <div className="p-4 text-center"><h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4><p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p></div>
                 </div>
@@ -263,11 +269,11 @@ export default function App() {
             <div className="space-y-4">
                {cart.map(i => (
                  <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                   <div className="flex-1 font-bold text-sm">{i.qty}x {i.name} <br/><span className="text-gray-400 text-[10px] uppercase">({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})</span></div>
+                   <div className="flex-1 font-bold text-sm">{i.qty}x {i.name} <br/><span className="text-gray-400 text-[10px] uppercase">({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})</span></div>
                    <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300 active:scale-90 transition-all"><Trash2 size={16}/></button></div>
                  </div>
                ))}
-               {cart.length === 0 && <div className="py-20 text-center opacity-20 italic">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
+               {cart.length === 0 && <div className="py-20 text-center opacity-20 italic font-bold">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
             </div>
 
             {cart.length > 0 && (
@@ -331,13 +337,7 @@ export default function App() {
                         </div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
-                      {(o.status === 'pending' || o.status === 'cooking') && qInfo && (
-                        <div className="bg-[#F5EEDC] p-4 rounded-2xl mb-4 flex items-center justify-between border border-[#A67C52]/20 shadow-inner animate-in fade-in">
-                          <div className="flex items-center gap-3"><Clock size={20} className="text-[#A67C52]" /><div><p className="text-[10px] font-bold text-[#A67C52] uppercase">สถานะคิว</p><p className="text-sm font-bold">{o.status === 'pending' ? 'รอแอดมินรับออเดอร์' : `คิวที่ ${qInfo.currentQueue}`}</p></div></div>
-                          {o.status === 'cooking' && <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm tracking-tighter">อีก {qInfo.totalWait} คิว</p>}
-                        </div>
-                      )}
-                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>))}</div>
+                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {item.sweetness}{item.hasFreePearl ? (item.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})</p>))}</div>
                       {o.note && <div className="mt-3 p-3 bg-gray-50 rounded-xl border-l-4 border-[#A67C52]/30 text-[11px] text-gray-600 italic">"{o.note}"</div>}
                    </div>
                  );
@@ -365,7 +365,7 @@ export default function App() {
                         <div className="text-right"><span className="text-orange-600 font-bold block">฿{o.total}</span><span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span></div>
                       </div>
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
-                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => (<div key={idx} className="text-xs text-gray-600 flex justify-between"><span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</span><span className="font-bold">฿{i.price * i.qty}</span></div>))}</div>
+                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => (<div key={idx} className="text-xs text-gray-600 flex justify-between"><span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})</span><span className="font-bold">฿{i.price * i.qty}</span></div>))}</div>
                       {o.note && <div className="mb-4 p-3 bg-orange-50 rounded-2xl border-2 border-orange-100 text-xs text-orange-900 font-bold">หมายเหตุ: {o.note}</div>}
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ดูสลิป</button>}
@@ -385,6 +385,7 @@ export default function App() {
 
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
+                {/* เพิ่มเมนูใหม่ (มีช่องติ๊กไข่มุกฟรี) */}
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">เพิ่มเมนูใหม่</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
@@ -393,6 +394,11 @@ export default function App() {
                     <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
+                  </div>
+                  {/* ตัวเลือกแถมไข่มุกฟรี */}
+                  <div className="flex items-center justify-center gap-2 p-2 bg-white rounded-2xl shadow-sm border border-orange-50">
+                    <input type="checkbox" id="freePearl" checked={newMenu.hasFreePearl} onChange={e => setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
+                    <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> เมนูนี้แถมไข่มุกฟรี</label>
                   </div>
                   <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all">
                     <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
@@ -403,10 +409,20 @@ export default function App() {
                   {newMenu.image && <img src={newMenu.image} className="w-24 h-24 mx-auto rounded-3xl object-cover border-4 border-white shadow-md" alt="new" />}
                   <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">บันทึกเมนูใหม่</button>
                 </div>
+                
                 <div className="space-y-3">
                    {menuItems.map(item => (
                      <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
-                       <div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" /><div><p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p><p className="text-xs text-[#A67C52] font-bold">฿{item.price}</p></div></div>
+                       <div className="flex items-center gap-4">
+                         <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
+                         <div>
+                            <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
+                            <p className="text-xs text-[#A67C52] font-bold">฿{item.price}</p>
+                            <button onClick={() => toggleFreePearl(item.id, item.hasFreePearl)} className={`text-[9px] px-2 py-0.5 rounded-full font-bold mt-1 ${item.hasFreePearl ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'}`}>
+                              {item.hasFreePearl ? 'แถมไข่มุก' : 'ไม่แถมไข่มุก'}
+                            </button>
+                         </div>
+                       </div>
                        <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 hover:text-red-500 transition-all active:scale-90"><Trash2 size={18}/></button>
                      </div>
                    ))}
@@ -416,7 +432,7 @@ export default function App() {
 
             {adminTab === 'settings' && (
               <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-5 text-center animate-in fade-in shadow-inner">
-                <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">ตั้งค่าช่องทางชำระเงิน</h3>
+                <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">ตั้งค่าร้านค้า</h3>
                 <div className="text-left"><label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">หมายเลขพร้อมเพย์</label><input type="text" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} /></div>
                 <div className="text-left">
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">อัปโหลดรูป QR Code ร้าน</label>
@@ -460,17 +476,31 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal ตัวเลือกเมนู */}
+      {/* Modal ตัวเลือกเมนู (เพิ่มส่วนแถมไข่มุก) */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
             <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:text-gray-600"><X/></button></div>
             <div className="space-y-8">
-              <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
+              {/* ตัวเลือกความหวาน */}
+              <div><label className="text-sm font-bold block mb-4 text-gray-400 uppercase tracking-widest text-[10px]">ระดับความหวาน</label>
                 <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
                     <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
                 ))}</div>
               </div>
+
+              {/* ตัวเลือกไข่มุกฟรี (ถ้ามีสิทธิ์) */}
+              {optionModalItem.hasFreePearl && (
+                <div>
+                   <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> เมนูนี้แถมไข่มุกฟรี!</label>
+                   <div className="grid grid-cols-2 gap-3">
+                     <button onClick={() => setTempOptions({...tempOptions, addPearl: true})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.addPearl ? 'bg-orange-400 text-white border-orange-400 shadow-md' : 'bg-white text-gray-300 border-gray-100'}`}>ใส่ไข่มุก (ฟรี)</button>
+                     <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${!tempOptions.addPearl ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white text-gray-300 border-gray-100'}`}>ไม่รับไข่มุก</button>
+                   </div>
+                </div>
+              )}
+
+              {/* ตัวเลือก เย็น/ปั่น */}
               <div className="grid grid-cols-2 gap-5">
                  <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เมนูเย็น</span></button>
                  <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
@@ -478,7 +508,7 @@ export default function App() {
             </div>
             <button onClick={() => {
                 const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0);
-                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}`;
+                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${tempOptions.addPearl}`;
                 setCart(prev => {
                   const ex = prev.find(i => i.cartId === cartId);
                   if (ex) return prev.map(i => i.cartId === cartId ? { ...i, qty: i.qty + 1 } : i);

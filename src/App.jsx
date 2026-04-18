@@ -86,7 +86,7 @@ export default function App() {
   };
 
   const handleOrder = async () => {
-    if (lineProfile.userId.startsWith('guest_')) {
+    if ((lineProfile.userId || '').startsWith('guest_')) {
       return alert("เพื่อความถูกต้องในการส่งบิลใบเสร็จ กรุณากดปุ่ม 'ล็อกอิน LINE' สีเขียวด้านบนก่อนทำการสั่งซื้อนะครับ 🐮");
     }
 
@@ -110,7 +110,7 @@ export default function App() {
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "sm" },
+              { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName || 'ลูกค้า'}`, weight: "bold", size: "sm" },
               { type: "separator", margin: "md" },
               ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] })),
               { type: "separator", margin: "md" },
@@ -164,10 +164,10 @@ export default function App() {
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
-             {lineProfile.userId.startsWith('guest_') ? (
+             {(lineProfile.userId || '').startsWith('guest_') ? (
                <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 active:scale-95"><LogIn size={10}/> ล็อกอิน LINE เพื่อรับบิล</button>
              ) : (
-               <p className="text-[9px] font-bold text-green-700 uppercase">คุณ {lineProfile.displayName.slice(0, 15)}</p>
+               <p className="text-[9px] font-bold text-green-700 uppercase">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
              )}
            </div>
         </div>
@@ -296,10 +296,11 @@ export default function App() {
             <div className="space-y-4">
               {orders.map(o => (
                 <div key={o.id} className="border border-gray-100 p-4 rounded-2xl shadow-sm">
-                  <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
+                  <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName || 'ลูกค้า'}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
                   <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
+                  {/* แก้ไขข้อผิดพลาดตรงนี้ โดยเพิ่ม (o.items || []) ป้องกัน array ว่าง */}
                   <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
-                    {o.items.map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
+                    {(o.items || []).map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => window.open(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>

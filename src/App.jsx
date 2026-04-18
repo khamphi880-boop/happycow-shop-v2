@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -30,20 +30,21 @@ export default function App() {
   
   const [address, setAddress] = useState('');
   const [slipImage, setSlipImage] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('promptpay'); // 'promptpay' | 'cash'
   const [isCopied, setIsCopied] = useState(false);
   
-  // สเตทสำหรับแอดมิน
+  // แอดมิน
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
-  // สเตทสำหรับตั้งค่าร้าน
+  // ตั้งค่าร้าน
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // สเตทสำหรับจัดการเมนูใหม่
+  // จัดการเมนู
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
   
   const [optionModalItem, setOptionModalItem] = useState(null);
@@ -118,13 +119,22 @@ export default function App() {
 
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) return alert("กรุณาล็อกอิน LINE ก่อนครับ");
-    if (!address || !slipImage) return alert("กรุณากรอกที่อยู่และแนบสลิปครับ");
+    if (!address) return alert("กรุณากรอกที่อยู่จัดส่งครับ");
+    if (paymentMethod === 'promptpay' && !slipImage) return alert("กรุณาแนบสลิปการโอนเงินครับ 🐮");
+    
     setIsLoading(true);
     
     const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const orderData = {
-      items: cart, total, status: 'pending', timestamp: Date.now(),
-      userId: lineProfile.userId, lineName: lineProfile.displayName, address, slipImage
+      items: cart, 
+      total, 
+      status: 'pending', 
+      timestamp: Date.now(),
+      userId: lineProfile.userId, 
+      lineName: lineProfile.displayName, 
+      address, 
+      slipImage: paymentMethod === 'promptpay' ? slipImage : 'cash_payment',
+      paymentMethod: paymentMethod
     };
 
     try {
@@ -139,6 +149,7 @@ export default function App() {
             type: "box", layout: "vertical",
             contents: [
               { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "sm" },
+              { type: "text", text: `วิธีชำระเงิน: ${paymentMethod === 'promptpay' ? 'โอนเงิน' : 'เงินสด'}`, size: "xs", color: "#A67C52", margin: "xs" },
               { type: "separator", margin: "md" },
               ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] })),
               { type: "separator", margin: "md" },
@@ -154,7 +165,7 @@ export default function App() {
       });
 
       setCart([]); setSlipImage(''); setAddress(''); setView('myOrders');
-      alert("สั่งซื้อสำเร็จ! คิวของคุณถูกบันทึกแล้วครับ 🐮");
+      alert("สั่งซื้อสำเร็จ! รอแอดมินตรวจสอบออเดอร์นะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
   };
@@ -166,15 +177,11 @@ export default function App() {
     });
   };
 
-  // ฟังก์ชันคำนวณคิว
   const getQueueInfo = (orderId) => {
     const activeOrders = orders.filter(o => o.status === 'pending' || o.status === 'cooking').sort((a,b) => a.timestamp - b.timestamp);
     const index = activeOrders.findIndex(o => o.id === orderId);
     if (index === -1) return null;
-    return {
-      currentQueue: index + 1,
-      totalWait: index
-    };
+    return { currentQueue: index + 1, totalWait: index };
   };
 
   return (
@@ -230,6 +237,7 @@ export default function App() {
           <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
             <h2 className="text-3xl font-serif font-bold">ตะกร้าของคุณ</h2>
+            
             <div className="space-y-4">
                {cart.map(i => (
                  <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
@@ -237,25 +245,55 @@ export default function App() {
                    <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
                  </div>
                ))}
+               {cart.length === 0 && <div className="py-20 text-center opacity-20 italic">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
             </div>
+
             {cart.length > 0 && (
-              <div className="space-y-6 pt-6 border-t border-gray-100 text-center">
-                <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ที่อยู่จัดส่ง / เบอร์โทร..." className="w-full p-5 rounded-3xl bg-gray-50 h-32 text-sm outline-none border border-gray-100 focus:border-[#A67C52]" />
-                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200">
-                  <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
-                  {storeSettings.qrCodeImage ? <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" /> : <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" />}
-                  <button onClick={copyPromptPay} className="mb-6 bg-white border px-3 py-1.5 rounded-full text-[10px] font-bold inline-flex items-center gap-2 shadow-sm">
-                    {isCopied ? <CheckCircle size={14} className="text-green-500"/> : <Copy size={14}/>} {storeSettings.promptPayNo}
-                  </button><br/>
-                  <label className="cursor-pointer bg-[#3D2C1E] text-white py-4 px-8 rounded-2xl text-[11px] font-bold inline-flex items-center gap-2 shadow-lg active:scale-95 transition-all">
-                    <Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แนบรูปสลิป'}
-                    <input type="file" accept="image/*" className="hidden" onChange={e => {
-                      const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(e.target.files[0]);
-                    }} />
-                  </label>
-                  {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white" />}
+              <div className="space-y-6 pt-6 border-t border-gray-100">
+                {/* เลือกวิธีชำระเงิน */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block">วิธีชำระเงิน</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => setPaymentMethod('promptpay')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}>
+                      <CreditCard size={20}/><span className="text-[10px]">โอนผ่านพร้อมเพย์</span>
+                    </button>
+                    <button onClick={() => setPaymentMethod('cash')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}>
+                      <Banknote size={20}/><span className="text-[10px]">ชำระเงินสด</span>
+                    </button>
+                  </div>
                 </div>
-                <button onClick={handleOrder} disabled={isLoading || !slipImage} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl ${slipImage ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `ยืนยันการสั่งซื้อ • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
+
+                <div>
+                  <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง / เบอร์โทร</label>
+                  <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเบอร์โทร และจุดส่งสินค้า..." className="w-full p-5 rounded-3xl bg-gray-50 h-32 text-sm outline-none border border-gray-100 focus:border-[#A67C52]" />
+                </div>
+                
+                {paymentMethod === 'promptpay' && (
+                  <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center">
+                    <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
+                    {storeSettings.qrCodeImage ? <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" /> : <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" />}
+                    <button onClick={copyPromptPay} className="mb-6 bg-white border px-3 py-1.5 rounded-full text-[10px] font-bold inline-flex items-center gap-2 shadow-sm">
+                      {isCopied ? <CheckCircle size={14} className="text-green-500"/> : <Copy size={14}/>} {storeSettings.promptPayNo}
+                    </button><br/>
+                    <label className="cursor-pointer bg-[#3D2C1E] text-white py-4 px-8 rounded-2xl text-[11px] font-bold inline-flex items-center gap-2 shadow-lg active:scale-95 transition-all">
+                      <Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แนบรูปสลิป'}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(e.target.files[0]);
+                      }} />
+                    </label>
+                    {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white" />}
+                  </div>
+                )}
+
+                {paymentMethod === 'cash' && (
+                  <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-orange-100 text-center">
+                    <Banknote size={30} className="mx-auto mb-3 text-orange-400" />
+                    <p className="text-xs font-bold text-orange-700">ชำระเงินสดตอนรับสินค้า</p>
+                    <p className="text-[10px] text-orange-600 mt-1">กรุณาเตรียมเงินให้พอดีหรือระบุในที่อยู่หากต้องการทอนเงิน</p>
+                  </div>
+                )}
+
+                <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
               </div>
             )}
           </div>
@@ -287,11 +325,11 @@ export default function App() {
                           <div className="flex items-center gap-3">
                             <Clock size={20} className="text-[#A67C52]" />
                             <div>
-                              <p className="text-[10px] font-bold text-[#A67C52] uppercase">สถานะคิวของคุณ</p>
-                              <p className="text-sm font-bold">คิวที่ {qInfo.currentQueue}</p>
+                              <p className="text-[10px] font-bold text-[#A67C52] uppercase">สถานะคิว</p>
+                              <p className="text-sm font-bold">{o.status === 'pending' ? 'รอแอดมินรับออเดอร์' : `คิวที่ ${qInfo.currentQueue}`}</p>
                             </div>
                           </div>
-                          <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm">อีก {qInfo.totalWait} คิวข้างหน้า</p>
+                          {o.status === 'cooking' && <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm">อีก {qInfo.totalWait} คิวข้างหน้า</p>}
                         </div>
                       )}
 
@@ -320,16 +358,17 @@ export default function App() {
 
             {adminTab === 'orders' && (
               <div className="space-y-4">
-                {orders.map((o, idx) => {
-                  const qInfo = getQueueInfo(o.id);
-                  return (
+                {orders.map((o, idx) => (
                     <div key={o.id} className="border border-gray-100 p-5 rounded-3xl shadow-sm bg-white">
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="bg-[#3D2C1E] text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{orders.length - idx}</span>
+                          <span className="bg-[#3D2C1E] text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{idx + 1}</span>
                           <span className="font-bold text-sm">{o.lineName}</span>
                         </div>
-                        <span className="text-orange-600 font-bold">฿{o.total}</span>
+                        <div className="text-right">
+                          <span className="text-orange-600 font-bold block">฿{o.total}</span>
+                          <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span>
+                        </div>
                       </div>
                       
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
@@ -344,30 +383,32 @@ export default function App() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 mb-2">
-                        <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm"><Eye size={14}/> ดูสลิป</button>
+                        {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm"><Eye size={14}/> ดูสลิป</button>}
+                        {o.paymentMethod === 'cash' && <div className="bg-orange-50 text-orange-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm opacity-50"><Banknote size={14}/> จ่ายเงินสด</div>}
                         <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-400 py-3 rounded-xl flex items-center justify-center"><Trash2 size={16}/></button>
                       </div>
 
-                      {/* ส่วนจัดการสถานะ */}
+                      {/* ส่วนจัดการสถานะ - แอดมินกดยืนยันออเดอร์ */}
                       <div className="flex gap-2 border-t pt-3 mt-2">
                         {o.status === 'pending' && (
-                          <button onClick={() => updateOrderStatus(o.id, 'cooking')} className="flex-1 bg-orange-400 text-white py-3 rounded-xl text-[10px] font-bold shadow-md">เริ่มทำ (ปรุง)</button>
+                          <button onClick={() => updateOrderStatus(o.id, 'cooking')} className="flex-1 bg-orange-400 text-white py-4 rounded-xl text-[11px] font-bold shadow-lg animate-pulse">กดยอมรับออเดอร์</button>
                         )}
                         {o.status === 'cooking' && (
-                          <button onClick={() => updateOrderStatus(o.id, 'completed')} className="flex-1 bg-green-500 text-white py-3 rounded-xl text-[10px] font-bold shadow-md flex items-center justify-center gap-1"><Check size={14}/> เสร็จสิ้น (ส่ง)</button>
+                          <button onClick={() => updateOrderStatus(o.id, 'completed')} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1"><Check size={14}/> เสร็จสิ้น (ส่งสินค้า)</button>
                         )}
                         {o.status === 'completed' && (
-                          <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">ออร์เดอร์สำเร็จแล้ว</div>
+                          <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จแล้ว</div>
                         )}
                       </div>
                     </div>
-                  );
-                })}
+                  )
+                )}
+                {orders.length === 0 && <div className="py-20 text-center opacity-10 font-serif italic">ไม่มีรายการสั่งซื้อครับ 🐮</div>}
               </div>
             )}
 
             {adminTab === 'menus' && (
-              <div className="space-y-8 animate-in fade-in">
+              <div className="space-y-8">
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center">
                   <h3 className="font-bold text-sm text-[#A67C52]">เพิ่มเมนูใหม่</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
@@ -377,7 +418,7 @@ export default function App() {
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
-                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all">
+                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400">
                     <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => {
                       const fr = new FileReader(); fr.onload = (ev) => setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
@@ -387,7 +428,6 @@ export default function App() {
                   <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">บันทึกเมนูใหม่</button>
                 </div>
                 <div className="space-y-3">
-                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2">รายการเมนูทั้งหมด</h4>
                    {menuItems.map(item => (
                      <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm">
                        <div className="flex items-center gap-4">
@@ -402,7 +442,7 @@ export default function App() {
             )}
 
             {adminTab === 'settings' && (
-              <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-5 text-center animate-in fade-in">
+              <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-5 text-center">
                 <h3 className="font-bold text-sm text-[#A67C52]">ตั้งค่าช่องทางชำระเงิน</h3>
                 <div className="text-left">
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">หมายเลขพร้อมเพย์</label>
@@ -428,47 +468,45 @@ export default function App() {
         )}
       </main>
 
-      {/* --- Modal ดูสลิป (ขยายใหญ่) --- */}
-      {selectedSlip && (
+      {/* Modal ดูสลิป */}
+      {selectedSlip && selectedSlip !== 'cash_payment' && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setSelectedSlip(null)}>
-          <button className="absolute top-10 right-10 text-white p-3 bg-white/20 rounded-full hover:bg-white/30 transition-all"><X size={30}/></button>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl animate-in zoom-in duration-300 border-4 border-white/10" />
+          <button className="absolute top-10 right-10 text-white p-3 bg-white/20 rounded-full"><X size={30}/></button>
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10" />
         </div>
       )}
 
-      {/* --- Modal กรอกรหัสแอดมิน --- */}
+      {/* Modal แอดมิน */}
       {showAdminModal && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl animate-in zoom-in duration-300 text-center">
-            <div className="w-16 h-16 bg-[#F5EEDC] rounded-full flex items-center justify-center mx-auto mb-6"><Settings className="text-[#A67C52]" size={32}/></div>
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4">
+          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
             <h3 className="font-bold text-xl mb-2 text-[#3D2C1E]">แอดมินเข้าสู่ระบบ</h3>
-            <p className="text-xs text-gray-400 mb-8">กรุณากรอกรหัสผ่านเพื่อจัดการหลังบ้าน</p>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52] transition-all" placeholder="••••••" />
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52]" placeholder="••••••" />
             <div className="flex gap-4">
-               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl hover:bg-gray-200 transition-all">ยกเลิก</button>
+               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl">ยกเลิก</button>
                <button onClick={() => {
                  if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
                  else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
-               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg active:scale-95 transition-all">ยืนยัน</button>
+               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg">ยืนยัน</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- Modal เลือกตัวเลือกสินค้า --- */}
+      {/* Modal เลือกเมนู */}
       {optionModalItem && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
           <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 hover:text-gray-600 transition-all"><X/></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400"><X/></button></div>
             <div className="space-y-8">
-              <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">เลือกระดับความหวาน</label>
+              <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
                 <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
-                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-300 border-gray-100 hover:border-[#A67C52]'}`}>{l}</button>
+                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E]' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
                 ))}</div>
               </div>
               <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เมนูเย็น</span></button>
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs">เมนูเย็น</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
               </div>
             </div>
             <button onClick={() => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -34,19 +34,20 @@ export default function App() {
   const [paymentMethod, setPaymentMethod] = useState('promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
   
-  // สถานะ Admin
+  // Admin State
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
-  // ตั้งค่าร้าน
+  // Store Settings
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // จัดการเมนู (เพิ่ม hasFreePearl)
+  // Menu Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
+  const [editingMenu, setEditingMenu] = useState(null); // สำหรับเก็บข้อมูลเมนูที่กำลังแก้ไข
   
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true });
@@ -95,6 +96,7 @@ export default function App() {
     if (window.liff && !window.liff.isLoggedIn()) window.liff.login();
   };
 
+  // --- ฟังก์ชันจัดการเมนู ---
   const handleAddMenu = async () => {
     if (!newMenu.name || !newMenu.price || !newMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
     try {
@@ -106,9 +108,20 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
-  const toggleFreePearl = async (id, currentStatus) => {
+  const handleUpdateMenu = async () => {
+    if (!editingMenu.name || !editingMenu.price) return alert('กรุณากรอกข้อมูลให้ครบ');
     try {
-      await updateDoc(doc(db, 'menus', id), { hasFreePearl: !currentStatus });
+      const menuRef = doc(db, 'menus', editingMenu.id);
+      await updateDoc(menuRef, {
+        name: editingMenu.name,
+        price: Number(editingMenu.price),
+        category: editingMenu.category,
+        image: editingMenu.image,
+        blendPrice: Number(editingMenu.blendPrice),
+        hasFreePearl: editingMenu.hasFreePearl
+      });
+      alert('อัปเดตเมนูเรียบร้อย! ✨');
+      setEditingMenu(null);
     } catch (e) { alert(e.message); }
   };
 
@@ -122,6 +135,7 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
+  // --- ฟังก์ชันสั่งซื้อ ---
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) return alert("⚠️ กรุณาล็อกอิน LINE ก่อนสั่งซื้อเพื่อให้บิลส่งเข้าแชทได้ครับ");
     if (!address) return alert("กรุณากรอกที่อยู่จัดส่งครับ");
@@ -168,14 +182,8 @@ export default function App() {
                 ]
               })),
               { type: "separator", margin: "md" },
-              { type: "box", layout: "vertical", margin: "md", contents: [
-                { type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" },
-                { type: "text", text: address, size: "xs", wrap: true, margin: "xs" }
-              ]},
-              note ? { type: "box", layout: "vertical", margin: "sm", backgroundColor: "#F5F5F5", paddingAll: "sm", cornerRadius: "sm", contents: [
-                { type: "text", text: "หมายเหตุถึงร้าน", size: "xxs", color: "#888888", weight: "bold" },
-                { type: "text", text: note, size: "xs", wrap: true, margin: "xs" }
-              ]} : { type: "spacer", size: "xs" },
+              { type: "box", layout: "vertical", margin: "md", contents: [{ type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" }, { type: "text", text: address, size: "xs", wrap: true, margin: "xs" }] },
+              note ? { type: "box", layout: "vertical", margin: "sm", backgroundColor: "#F5F5F5", paddingAll: "sm", cornerRadius: "sm", contents: [{ type: "text", text: "หมายเหตุถึงร้าน", size: "xxs", color: "#888888", weight: "bold" }, { type: "text", text: note, size: "xs", wrap: true, margin: "xs" }] } : { type: "spacer", size: "xs" },
               { type: "separator", margin: "md" },
               { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold", size: "md" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52", size: "md" }] }
             ]
@@ -183,14 +191,20 @@ export default function App() {
         }
       };
 
-      await fetch('/api/sendLine', {
+      // ส่งข้อมูลไปที่ API
+      const response = await fetch('/api/sendLine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
       });
 
+      const resData = await response.json();
+      if (!response.ok || !resData.success) {
+        console.error("LINE Send Error:", resData);
+      }
+
       setCart([]); setSlipImage(''); setAddress(''); setNote(''); setView('myOrders');
-      alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
+      alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชท LINE แล้วนะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
   };
@@ -265,7 +279,6 @@ export default function App() {
           <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
             <h2 className="text-3xl font-serif font-bold text-[#3D2C1E]">ตะกร้าของคุณ</h2>
-            
             <div className="space-y-4">
                {cart.map(i => (
                  <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -285,7 +298,6 @@ export default function App() {
                     <button onClick={() => setPaymentMethod('cash')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Banknote size={20}/><span className="text-[10px]">ชำระเงินสด</span></button>
                   </div>
                 </div>
-
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง / เบอร์โทร</label>
@@ -296,7 +308,6 @@ export default function App() {
                     <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อย, แยกน้ำ..." className="w-full p-4 rounded-2xl bg-gray-50 text-sm outline-none border focus:border-[#A67C52] transition-all" />
                   </div>
                 </div>
-                
                 {paymentMethod === 'promptpay' && (
                   <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center">
                     <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
@@ -311,7 +322,6 @@ export default function App() {
                     {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white animate-in zoom-in" alt="slip preview" />}
                   </div>
                 )}
-                {paymentMethod === 'cash' && <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-orange-100 text-center animate-in fade-in"><Banknote size={30} className="mx-auto mb-3 text-orange-400" /><p className="text-xs font-bold text-orange-700 uppercase">ชำระเงินสดตอนรับสินค้า</p></div>}
                 <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white shadow-[#A67C52]/30' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
               </div>
             )}
@@ -337,8 +347,7 @@ export default function App() {
                         </div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
-                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {item.sweetness}{item.hasFreePearl ? (item.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})</p>))}</div>
-                      {o.note && <div className="mt-3 p-3 bg-gray-50 rounded-xl border-l-4 border-[#A67C52]/30 text-[11px] text-gray-600 italic">"{o.note}"</div>}
+                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>))}</div>
                    </div>
                  );
                })}
@@ -346,6 +355,7 @@ export default function App() {
           </div>
         )}
 
+        {/* --- Admin Tab --- */}
         {view === 'admin' && (
           <div className="p-6 bg-white min-h-screen animate-in fade-in">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
@@ -365,7 +375,7 @@ export default function App() {
                         <div className="text-right"><span className="text-orange-600 font-bold block">฿{o.total}</span><span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span></div>
                       </div>
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
-                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => (<div key={idx} className="text-xs text-gray-600 flex justify-between"><span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})</span><span className="font-bold">฿{i.price * i.qty}</span></div>))}</div>
+                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => (<div key={idx} className="text-xs text-gray-600 flex justify-between"><span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'}{i.addPearl ? '+มุก':''})</span><span className="font-bold">฿{i.price * i.qty}</span></div>))}</div>
                       {o.note && <div className="mb-4 p-3 bg-orange-50 rounded-2xl border-2 border-orange-100 text-xs text-orange-900 font-bold">หมายเหตุ: {o.note}</div>}
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ดูสลิป</button>}
@@ -379,51 +389,51 @@ export default function App() {
                     </div>
                   )
                 )}
-                {orders.length === 0 && <div className="py-20 text-center opacity-10 font-serif italic">ไม่มีรายการสั่งซื้อ 🐮</div>}
               </div>
             )}
 
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
-                {/* เพิ่มเมนูใหม่ (มีช่องติ๊กไข่มุกฟรี) */}
-                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner">
-                  <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">เพิ่มเมนูใหม่</h3>
-                  <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
+                {/* ฟอร์มเพิ่ม/แก้ไขเมนู */}
+                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
+                  <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
+                  <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
                   <div className="flex gap-2">
-                    <input type="number" placeholder="ราคา" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
-                    <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
+                    <input type="number" placeholder="ราคา" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.price : newMenu.price} onChange={e => editingMenu ? setEditingMenu({...editingMenu, price: e.target.value}) : setNewMenu({...newMenu, price: e.target.value})} />
+                    <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white" value={editingMenu ? editingMenu.category : newMenu.category} onChange={e => editingMenu ? setEditingMenu({...editingMenu, category: e.target.value}) : setNewMenu({...newMenu, category: e.target.value})}>
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
-                  {/* ตัวเลือกแถมไข่มุกฟรี */}
                   <div className="flex items-center justify-center gap-2 p-2 bg-white rounded-2xl shadow-sm border border-orange-50">
-                    <input type="checkbox" id="freePearl" checked={newMenu.hasFreePearl} onChange={e => setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
+                    <input type="checkbox" id="freePearl" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
                     <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> เมนูนี้แถมไข่มุกฟรี</label>
                   </div>
                   <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all">
-                    <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
+                    <Upload size={18} className="inline mr-2"/> {(editingMenu ? editingMenu.image : newMenu.image) ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => {
-                      const fr = new FileReader(); fr.onload = (ev) => setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
+                      const fr = new FileReader(); fr.onload = (ev) => editingMenu ? setEditingMenu({...editingMenu, image: ev.target.result}) : setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
                     }} />
                   </label>
-                  {newMenu.image && <img src={newMenu.image} className="w-24 h-24 mx-auto rounded-3xl object-cover border-4 border-white shadow-md" alt="new" />}
-                  <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">บันทึกเมนูใหม่</button>
+                  <div className="flex gap-2">
+                    {editingMenu && <button onClick={() => setEditingMenu(null)} className="flex-1 bg-gray-200 text-gray-500 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">ยกเลิก</button>}
+                    <button onClick={editingMenu ? handleUpdateMenu : handleAddMenu} className="flex-[2] bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">{editingMenu ? 'บันทึกการแก้ไข' : 'บันทึกเมนูใหม่'}</button>
+                  </div>
                 </div>
                 
                 <div className="space-y-3">
                    {menuItems.map(item => (
-                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all">
                        <div className="flex items-center gap-4">
                          <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
                          <div>
                             <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
-                            <p className="text-xs text-[#A67C52] font-bold">฿{item.price}</p>
-                            <button onClick={() => toggleFreePearl(item.id, item.hasFreePearl)} className={`text-[9px] px-2 py-0.5 rounded-full font-bold mt-1 ${item.hasFreePearl ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'}`}>
-                              {item.hasFreePearl ? 'แถมไข่มุก' : 'ไม่แถมไข่มุก'}
-                            </button>
+                            <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
                          </div>
                        </div>
-                       <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 hover:text-red-500 transition-all active:scale-90"><Trash2 size={18}/></button>
+                       <div className="flex gap-2">
+                         <button onClick={() => setEditingMenu(item)} className="p-3 text-blue-400 active:scale-90 transition-all"><Edit size={18}/></button>
+                         <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 active:scale-90 transition-all"><Trash2 size={18}/></button>
+                       </div>
                      </div>
                    ))}
                 </div>
@@ -451,59 +461,31 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal ดูสลิป */}
-      {selectedSlip && selectedSlip !== 'cash_payment' && (
-        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setSelectedSlip(null)}>
-          <button className="absolute top-10 right-10 text-white p-3 bg-white/20 rounded-full transition-all hover:bg-white/30"><X size={30}/></button>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in duration-300" alt="slip big" />
-        </div>
-      )}
-
-      {/* Modal แอดมินล็อกอิน */}
-      {showAdminModal && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center animate-in zoom-in duration-300">
-            <h3 className="font-bold text-xl mb-8 text-[#3D2C1E]">แอดมินเข้าสู่ระบบ</h3>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52] transition-all" placeholder="••••••" />
-            <div className="flex gap-4">
-               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl transition-all hover:bg-gray-200">ยกเลิก</button>
-               <button onClick={() => {
-                 if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
-                 else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
-               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg transition-all active:scale-95">ยืนยัน</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal ตัวเลือกเมนู (เพิ่มส่วนแถมไข่มุก) */}
+      {/* --- Modal ตัวเลือกเมนู --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:text-gray-600"><X/></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 active:text-gray-600"><X/></button></div>
             <div className="space-y-8">
-              {/* ตัวเลือกความหวาน */}
               <div><label className="text-sm font-bold block mb-4 text-gray-400 uppercase tracking-widest text-[10px]">ระดับความหวาน</label>
                 <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
                     <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
                 ))}</div>
               </div>
 
-              {/* ตัวเลือกไข่มุกฟรี (ถ้ามีสิทธิ์) */}
               {optionModalItem.hasFreePearl && (
                 <div>
-                   <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> เมนูนี้แถมไข่มุกฟรี!</label>
+                   <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> แถมมุกฟรี!</label>
                    <div className="grid grid-cols-2 gap-3">
                      <button onClick={() => setTempOptions({...tempOptions, addPearl: true})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.addPearl ? 'bg-orange-400 text-white border-orange-400 shadow-md' : 'bg-white text-gray-300 border-gray-100'}`}>ใส่ไข่มุก (ฟรี)</button>
-                     <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${!tempOptions.addPearl ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white text-gray-300 border-gray-100'}`}>ไม่รับไข่มุก</button>
+                     <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${!tempOptions.addPearl ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white text-gray-300 border-gray-100'}`}>ไม่ใส่ไข่มุก</button>
                    </div>
                 </div>
               )}
 
-              {/* ตัวเลือก เย็น/ปั่น */}
               <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เมนูเย็น</span></button>
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">ปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
               </div>
             </div>
             <button onClick={() => {
@@ -516,6 +498,30 @@ export default function App() {
                 });
                 setOptionModalItem(null);
               }} className="w-full py-6 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-2xl transition-all"><Plus size={24}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0)}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ดูสลิป */}
+      {selectedSlip && selectedSlip !== 'cash_payment' && (
+        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setSelectedSlip(null)}>
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl animate-in zoom-in duration-300" alt="slip big" />
+        </div>
+      )}
+
+      {/* Modal แอดมินล็อกอิน */}
+      {showAdminModal && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
+          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
+            <h3 className="font-bold text-xl mb-8 text-[#3D2C1E]">Admin Login</h3>
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52]" placeholder="••••••" />
+            <div className="flex gap-4">
+               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl">ยกเลิก</button>
+               <button onClick={() => {
+                 if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
+                 else { alert('Wrong Password!'); setAdminPassword(''); }
+               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl">ยืนยัน</button>
+            </div>
           </div>
         </div>
       )}

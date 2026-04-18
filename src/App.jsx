@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Settings, Clock, AlertCircle, CheckCircle, ChevronLeft, Image as ImageIcon, Store, X, Upload, Layers, BarChart3, ClipboardList, Check, XCircle, Edit, MapPin, User, Phone, Coffee, Leaf, Zap, ListOrdered, Copy, Download, Maximize } from 'lucide-react';
+import { 
+  ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, 
+  Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle 
+} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc } from 'firebase/firestore';
 
+// --- 1. Firebase Configuration ---
 const firebaseConfig = {
   apiKey: "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",
   authDomain: "happycowshop-fd7b0.firebaseapp.com",
@@ -16,220 +20,343 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const LIFF_ID = "2009817000-ySEM8T5K"; 
 
-const INITIAL_CATEGORIES = ['นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
-const INITIAL_SETTINGS = { isOpen: true, promptpayNo: '0812345678', qrImage: '', shopLogo: '' };
-const SWEETNESS_LEVELS = ['0%', '25%', '50%', '75%', '100%'];
-const CATEGORY_PALETTE = {
-  'นม': { main: '#A1CFCD', light: '#D1E8E2', textOnMain: '#3D2C1E' },
-  'ชา': { main: '#6B705C', light: '#8C9475', textOnMain: '#F5EEDC' },
-  'มัทฉะ': { main: '#6B705C', light: '#8C9475', textOnMain: '#F5EEDC' },
-  'กาแฟ': { main: '#A67C52', light: '#C69F78', textOnMain: '#F5EEDC' },
-  'ผลไม้และสมูทตี้': { main: '#F08080', light: '#D96969', textOnMain: '#F5EEDC' },
-  'เมนูพิเศษ': { main: '#3D2C1E', light: '#A67C52', textOnMain: '#F5EEDC' },
-};
-
-const GlobalStyles = () => (
-  <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Vollkorn:ital,wght@0,400..900;1,400..900&display=swap');
-    :root { --dark-choco: #3D2C1E; --creamy-latte: #F5EEDC; --oak: #A67C52; }
-    body { font-family: 'Lato', sans-serif; background-color: var(--creamy-latte); color: var(--dark-choco); margin: 0; -webkit-font-smoothing: antialiased; }
-    .font-serif { font-family: 'Vollkorn', serif; }
-    .hide-scrollbar::-webkit-scrollbar { display: none; }
-    .admin-bg { background: linear-gradient(135deg, #F5EEDC 0%, #D1E8E2 40%, #E8DFCC 80%, #F5EEDC 100%); background-size: 200% 200%; animation: gradientMove 15s ease infinite; }
-    @keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-  `}</style>
-);
+const CATEGORIES = ['นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
+const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
+const PROMPTPAY_NO = '0812345678'; // เปลี่ยนเลขบัญชีพร้อมเพย์ตรงนี้ได้ครับ
 
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
-  const [toppings, setToppings] = useState([]); 
-  const [orders, setOrders] = useState([]); 
-  const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
-  const [activeCategory, setActiveCategory] = useState(INITIAL_CATEGORIES[0]);
+  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
   const [view, setView] = useState('shop'); 
-  const [agreedToTerms, setAgreedToTerms] = useState({ t1: false, t2: false, t3: false });
-  const [adminPassword, setAdminPassword] = useState('');
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [customerInfo, setCustomerInfo] = useState({ address: '' });
-  const [myCustomerId, setMyCustomerId] = useState('');
-  const [newTopping, setNewTopping] = useState({ name: '', price: '' });
-  const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [] });
-  const [isCopied, setIsCopied] = useState(false);
-  const [showQrModal, setShowQrModal] = useState(false); 
-  const [lineProfile, setLineProfile] = useState(null);
+  
+  const [address, setAddress] = useState('');
   const [slipImage, setSlipImage] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+  
+  const [optionModalItem, setOptionModalItem] = useState(null);
+  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false });
+  const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
-    let cid = localStorage.getItem('happycow_cid') || 'cus_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('happycow_cid', cid);
-    setMyCustomerId(cid);
-    
-    if (LIFF_ID && window.liff) {
+    // 1. กำหนด Guest ID เผื่อเปิดผ่านเบราว์เซอร์ปกติ
+    let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);
+    localStorage.setItem('happycow_uid', cid);
+    setLineProfile(prev => ({ ...prev, userId: cid }));
+
+    // 2. เชื่อมต่อ LINE LIFF
+    if (window.liff) {
       window.liff.init({ liffId: LIFF_ID }).then(() => {
         if (window.liff.isLoggedIn()) {
-          window.liff.getProfile().then(profile => {
-            setLineProfile(profile);
-            setMyCustomerId(profile.userId);
-          });
+          window.liff.getProfile().then(p => setLineProfile({
+            displayName: p.displayName,
+            pictureUrl: p.pictureUrl,
+            userId: p.userId
+          }));
         }
-      });
+      }).catch(err => console.error("LIFF Error", err));
     }
 
-    onSnapshot(collection(db, 'menus'), s => { setMenuItems(s.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoading(false); });
-    onSnapshot(collection(db, 'toppings'), s => setToppings(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    onSnapshot(query(collection(db, 'orders')), s => setOrders(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp)));
-    onSnapshot(doc(db, 'settings', 'main'), d => { if (d.exists()) setSettings(d.data()); });
+    // 3. โหลดข้อมูลเมนูแบบ Real-time
+    const unsubMenu = onSnapshot(collection(db, 'menus'), snapshot => {
+      setMenuItems(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setIsLoading(false);
+    });
+
+    // 4. โหลดข้อมูลประวัติสั่งซื้อ
+    const unsubOrders = onSnapshot(collection(db, 'orders'), snapshot => {
+      setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp));
+    });
+
+    return () => { unsubMenu(); unsubOrders(); };
   }, []);
 
-  const handleCheckout = async () => {
-    if (!customerInfo.address || !slipImage) return alert('กรุณาระบุที่อยู่และแนบสลิปครับ');
+  // ฟังก์ชันสร้างเมนูตัวอย่าง (เผื่อฐานข้อมูลว่าง)
+  const seedSampleData = async () => {
+    const samples = [
+      { name: "นมสดฮอกไกโดเย็น", price: 45, category: "นม", image: "https://images.unsplash.com/photo-1550583724-1255818c053b?w=400", blendPrice: 5 },
+      { name: "ชาไทยต้นตำรับ", price: 40, category: "ชา", image: "https://images.unsplash.com/photo-1594631252845-29fc4586d517?w=400", blendPrice: 5 },
+      { name: "อเมริกาโน่เย็น", price: 50, category: "กาแฟ", image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400", blendPrice: 10 }
+    ];
+    for (const item of samples) await addDoc(collection(db, 'menus'), item);
+    alert("สร้างเมนูแนะนำสำเร็จครับ!");
+  };
+
+  // ฟังก์ชันกดยืนยันการสั่งซื้อ
+  const handleOrder = async () => {
+    if (!address || !slipImage) return alert("กรุณากรอกที่อยู่และแนบสลิปเพื่อยืนยันออร์เดอร์ครับ 🐮");
     setIsLoading(true);
     
-    const finalTotal = getTotalPrice();
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const orderData = {
-      items: cart, total: finalTotal, status: 'pending', timestamp: Date.now(),
-      customerId: myCustomerId, customerInfo: { ...customerInfo, lineName: lineProfile?.displayName || 'ลูกค้าทั่วไป', linePic: lineProfile?.pictureUrl || '' },
+      items: cart, 
+      total, 
+      status: 'pending', 
+      timestamp: Date.now(),
+      userId: lineProfile.userId, 
+      lineName: lineProfile.displayName,
+      address, 
       slipImage
     };
 
     try {
+      // บันทึกลง Firebase
       await addDoc(collection(db, 'orders'), orderData);
       
-      // --- สร้างบิล Flex Message สำหรับส่งผ่าน Chatbot ---
+      // สร้าง Flex Message สำหรับส่งให้ลูกค้าทาง LINE
       const flexMessage = {
-        type: "flex", altText: "ใบเสร็จออร์เดอร์ใหม่ - วัวนมอารมณ์ดี",
+        type: "flex",
+        altText: "ใบเสร็จจากร้านวัวนมอารมณ์ดี",
         contents: {
           type: "bubble",
-          header: { type: "box", layout: "vertical", backgroundColor: "#A67C52", contents: [ { type: "text", text: "RECEIPT / ใบเสร็จ", color: "#ffffff", weight: "bold", size: "sm" }, { type: "text", text: "ร้านวัวนมอารมณ์ดี", color: "#ffffff", weight: "bold", size: "xl", margin: "md" } ] },
-          body: {
-            type: "box", layout: "vertical", contents: [
-              { type: "text", text: `ขอบคุณคุณ ${lineProfile?.displayName || 'ลูกค้า'}`, weight: "bold", size: "md", color: "#3D2C1E" },
-              { type: "separator", margin: "md", color: "#eeeeee" },
-              ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [ { type: "text", text: `${i.qty}x ${i.name} (${i.isBlended?'ปั่น':'เย็น'})`, size: "xs", color: "#555555", flex: 3, wrap: true }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" } ] })),
-              { type: "separator", margin: "md", color: "#eeeeee" },
-              { type: "box", layout: "horizontal", margin: "md", contents: [ { type: "text", text: "ยอดสุทธิ", weight: "bold", size: "md" }, { type: "text", text: `฿${finalTotal}`, align: "end", weight: "bold", color: "#A67C52", size: "lg" } ] },
-              { type: "text", text: `ที่อยู่: ${customerInfo.address}`, size: "xxs", color: "#aaaaaa", margin: "md", wrap: true }
-            ]
+          header: {
+            type: "box", layout: "vertical", backgroundColor: "#3D2C1E",
+            contents: [{ type: "text", text: "ร้านวัวนมอารมณ์ดี", color: "#ffffff", weight: "bold", size: "lg", align: "center" }]
           },
-          footer: { type: "box", layout: "vertical", contents: [ { type: "text", text: "ได้รับออร์เดอร์แล้ว กำลังเตรียมจัดส่งครับ 🐮", align: "center", size: "xs", color: "#888888" } ] }
+          body: {
+            type: "box", layout: "vertical",
+            contents: [
+              { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "sm" },
+              { type: "separator", margin: "md" },
+              ...cart.map(i => ({
+                type: "box", layout: "horizontal", margin: "sm",
+                contents: [
+                  { type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 },
+                  { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }
+                ]
+              })),
+              { type: "separator", margin: "md" },
+              { type: "box", layout: "horizontal", margin: "md", contents: [
+                  { type: "text", text: "รวมทั้งสิ้น", weight: "bold" },
+                  { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52" }
+              ]}
+            ]
+          }
         }
       };
 
-      // --- ยิง API ไปที่ /api/sendLine เพื่อให้บอทส่งข้อความทักลูกค้า ---
-      if (myCustomerId && !myCustomerId.startsWith('cus_')) {
-        try {
-          await fetch('/api/sendLine', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: myCustomerId, flexMessage })
-          });
-        } catch (e) { console.error("Chatbot Error:", e); }
+      // ส่ง API แจ้งเตือนเข้า LINE (ยิงไปที่ api/sendLine.js)
+      if (lineProfile.userId && !lineProfile.userId.startsWith('guest_')) {
+        await fetch('/api/sendLine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
+        });
       }
 
-      setCart([]); setSlipImage(''); setView('myOrders');
-      // ปิดหน้า LIFF เมื่อสั่งเสร็จ
-      if (window.liff && window.liff.isInClient()) window.liff.closeWindow();
-
-    } catch (e) { alert("เกิดข้อผิดพลาด: " + e.message); }
+      setCart([]); setSlipImage(''); setAddress(''); setView('myOrders');
+      alert("สั่งซื้อสำเร็จ! รอรับความอร่อยได้เลยครับ 🐮");
+    } catch (e) { 
+      alert("เกิดข้อผิดพลาด: " + e.message); 
+    }
     setIsLoading(false);
   };
 
-  const getTotalPrice = () => cart.reduce((s, i) => s + (i.price * i.qty), 0);
-  const getCatAccent = (cat) => CATEGORY_PALETTE[cat] || CATEGORY_PALETTE['เมนูพิเศษ'];
+  const copyPromptPay = () => {
+    navigator.clipboard.writeText(PROMPTPAY_NO).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
+  };
+
+  const filteredItems = menuItems.filter(i => i.category === activeCategory);
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-creamy relative flex flex-col">
-      <GlobalStyles />
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-dark/5">
+    <div className="max-w-md mx-auto min-h-screen bg-[#F5EEDC] flex flex-col font-sans text-[#3D2C1E]">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&display=swap');
+        .font-serif { font-family: 'Vollkorn', serif; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+      `}</style>
+
+      {/* --- ส่วนหัว (Header) --- */}
+      <header className="sticky top-0 z-[50] bg-white/95 p-4 flex justify-between items-center border-b border-[#A67C52]/10 shadow-sm">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('shop')}>
-           {lineProfile ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-oak/20" /> : <div className="w-10 h-10 bg-dark text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
-           <div><h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1><p className="text-[9px] font-bold text-olive uppercase tracking-tighter">เปิดให้บริการแล้ว</p></div>
+           {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
+           <div><h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1><p className="text-[9px] font-bold text-green-700 uppercase">ยินดีต้อนรับคุณ {lineProfile.displayName.slice(0, 10)}</p></div>
         </div>
-        <div className="flex gap-1">
-          <button onClick={() => setView('myOrders')} className="p-2 text-dark/30"><ClipboardList/></button>
-          <button onClick={() => setView('cart')} className="relative p-2.5 bg-dark text-white rounded-xl shadow-lg">{cart.length > 0 && <span className="absolute -top-1 -right-1 bg-oak text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-creamy">{cart.length}</span>}<ShoppingCart size={20}/></button>
+        <div className="flex gap-2">
+          <button onClick={() => {
+            const pw = prompt("รหัสแอดมิน:");
+            if (pw === '570402') setView('admin');
+          }} className="p-2 text-gray-300 hover:text-gray-500"><Settings size={18}/></button>
+          <button onClick={() => setView('myOrders')} className="p-2 text-gray-400 hover:text-gray-600"><ClipboardList/></button>
+          <button onClick={() => setView('cart')} className="relative p-2 bg-[#3D2C1E] text-white rounded-xl shadow-lg w-10 h-10 flex items-center justify-center">
+            {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-[#A67C52] text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#F5EEDC]">{cart.length}</span>}
+            <ShoppingCart size={20}/>
+          </button>
         </div>
       </header>
 
-      {view === 'shop' && (
-        <div className="flex-1">
-           <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 bg-creamy/50 sticky top-[73px] z-40">
-             {INITIAL_CATEGORIES.map(c => <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c ? 'bg-dark text-white border-dark shadow-md' : 'bg-white text-dark/40 border-dark/5'}`}>{c}</button>)}
-           </div>
-           <div className="p-5 grid grid-cols-2 gap-5">
-             {menuItems.filter(i => i.category === activeCategory).map(i => (
-               <div key={i.id} onClick={() => setOptionModalItem(i)} className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-dark/5 active:scale-95 transition-transform">
-                 <div className="relative aspect-square bg-creamy/20"><img src={i.image} className="object-cover w-full h-full" /></div>
-                 <div className="p-4 text-center"><h4 className="font-bold text-sm mb-1 line-clamp-1">{i.name}</h4><p className="text-oak font-bold text-sm">฿{i.price}</p></div>
-               </div>
-             ))}
-           </div>
-        </div>
-      )}
-
-      {view === 'cart' && (
-        <div className="p-6 space-y-6 flex-1 bg-white rounded-t-[3rem] mt-4 shadow-2xl">
-          <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-dark/40 text-sm"><ChevronLeft size={20}/> กลับไปเลือกเพิ่ม</button>
-          <h2 className="text-3xl font-serif font-bold">ตะกร้าของคุณ</h2>
-          <div className="space-y-4">
-             {cart.map(i => (
-               <div key={i.cartItemId} className="flex justify-between items-center p-4 bg-creamy/20 rounded-2xl">
-                 <div className="flex-1">
-                   <p className="font-bold text-sm">{i.qty}x {i.name}</p>
-                   <p className="text-[10px] text-dark/40 uppercase font-bold">{i.isBlended?'ปั่น':'เย็น'} • หวาน {i.sweetness}</p>
-                 </div>
-                 <div className="text-right font-bold text-oak">฿{i.price * i.qty}</div>
-               </div>
-             ))}
-             {cart.length === 0 && <div className="py-20 text-center opacity-20 italic font-serif">ไม่มีสินค้าในตะกร้า</div>}
-          </div>
-          {cart.length > 0 && (
-            <div className="space-y-6 pt-6 border-t border-dark/5">
-              <div><label className="block text-sm font-bold mb-3 px-2">ที่อยู่จัดส่ง</label><textarea placeholder="เลขที่ห้อง / ชื่อตึก / จุดสังเกต..." value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} className="w-full p-5 rounded-3xl bg-creamy/30 border-none h-32 text-sm focus:ring-2 focus:ring-oak" /></div>
-              <div className="bg-creamy/30 p-6 rounded-[2.5rem] text-center border-2 border-dashed border-dark/10">
-                <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
-                <div className="flex justify-center mb-6">
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${settings.promptpayNo}:${getTotalPrice()}`} className="w-48 h-48 rounded-2xl shadow-lg bg-white p-3" />
-                </div>
-                <label className="cursor-pointer bg-dark text-white py-4 px-8 rounded-2xl text-xs font-bold inline-flex items-center gap-2 shadow-xl active:scale-95 transition-all"><Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แตะเพื่อแนบสลิป'}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files[0]; if(!f) return; const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(f); }} /></label>
-                {slipImage && <div className="mt-4 relative inline-block"><img src={slipImage} className="h-32 rounded-xl shadow-md border-2 border-white" /><button onClick={() => setSlipImage('')} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X size={14}/></button></div>}
-              </div>
-              <button onClick={handleCheckout} disabled={isLoading || !slipImage} className={`w-full py-5 rounded-[2rem] font-bold text-lg shadow-2xl transition-all active:scale-95 ${slipImage ? 'bg-oak text-white shadow-oak/30' : 'bg-dark/10 text-dark/30'}`}>สั่งซื้อและส่งบิลไปที่ LINE</button>
+      {/* --- พื้นที่แสดงผลหลัก --- */}
+      <main className="flex-1 pb-10">
+        
+        {/* หน้า 1: หน้าร้าน */}
+        {view === 'shop' && (
+          <div className="animate-in fade-in">
+            <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 sticky top-[73px] z-[40] bg-[#F5EEDC]/95">
+              {CATEGORIES.map(c => (
+                <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-400 border-gray-100'}`}>{c}</button>
+              ))}
             </div>
-          )}
-        </div>
-      )}
 
-      {view === 'myOrders' && (
-        <div className="p-6 space-y-6 flex-1">
-           <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-dark/40 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
-           <h2 className="text-3xl font-serif font-bold">ประวัติการสั่งซื้อ</h2>
-           <div className="space-y-6">
-             {orders.filter(o => o.customerId === myCustomerId).map(o => (
-               <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-dark/5 transition-all hover:shadow-xl">
-                  <div className="flex justify-between items-start mb-4 pb-4 border-b border-dark/5">
-                    <div><span className="text-[10px] font-bold text-oak uppercase tracking-widest">บิล #{o.id.slice(0,8)}</span><p className="text-xs font-bold text-dark/60 mt-1 uppercase">{o.status === 'pending' ? 'รอรับออร์เดอร์' : o.status}</p></div>
-                    <div className="text-2xl font-serif font-bold text-dark">฿{o.total}</div>
+            <div className="p-5">
+              {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
+                <div className="grid grid-cols-2 gap-5">
+                  {filteredItems.map(item => (
+                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer">
+                      <div className="aspect-square bg-gray-50"><img src={item.image} className="w-full h-full object-cover" alt={item.name} /></div>
+                      <div className="p-4 text-center"><h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4><p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p></div>
+                    </div>
+                  ))}
+                  {/* ปุ่มเพิ่มข้อมูลกรณีตารางว่าง */}
+                  {filteredItems.length === 0 && (
+                    <div className="col-span-2 py-20 text-center flex flex-col items-center gap-4">
+                      <AlertCircle size={40} className="text-gray-200" />
+                      <p className="text-gray-400 text-sm">ยังไม่มีเมนูในหมวด "{activeCategory}"</p>
+                      <button onClick={seedSampleData} className="text-xs bg-[#3D2C1E] text-white px-6 py-3 rounded-full shadow-lg">คลิกเพื่อสร้างเมนูแนะนำ</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* หน้า 2: ตะกร้าสินค้า */}
+        {view === 'cart' && (
+          <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10">
+            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
+            <h2 className="text-3xl font-serif font-bold">ตะกร้าของคุณ</h2>
+            
+            <div className="space-y-4">
+               {cart.map(i => (
+                 <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
+                   <div className="flex-1 font-bold text-sm">{i.qty}x {i.name} <br/><span className="text-gray-400 text-[10px] font-normal uppercase">({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})</span></div>
+                   <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
+                 </div>
+               ))}
+               {cart.length === 0 && <div className="py-20 text-center opacity-20 italic">ตะกร้าว่างเปล่า 🐮</div>}
+            </div>
+
+            {cart.length > 0 && (
+              <div className="space-y-6 pt-6 border-t border-gray-100">
+                <div>
+                  <label className="text-sm font-bold block mb-2 text-[#A67C52]"><MapPin size={16} className="inline mr-1"/>ที่อยู่จัดส่ง / เบอร์โทร</label>
+                  <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเลขที่ห้อง / ชื่อตึก / จุดสังเกต..." className="w-full p-5 rounded-3xl bg-gray-50 border-none h-32 text-sm focus:ring-2 focus:ring-[#A67C52]" />
+                </div>
+                
+                <div className="bg-gray-50 p-6 rounded-[2.5rem] text-center border-2 border-dashed border-gray-200">
+                  <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
+                  
+                  {/* รูป QR Code พร้อมเพย์ */}
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${PROMPTPAY_NO}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl shadow-md" alt="QR Code" />
+                  
+                  {/* ปุ่มคัดลอกพร้อมเพย์ */}
+                  <div className="flex items-center justify-center gap-2 mb-6">
+                    <p className="text-xs text-gray-500 font-bold">พร้อมเพย์: {PROMPTPAY_NO}</p>
+                    <button onClick={copyPromptPay} className="flex items-center gap-1 bg-white border border-gray-200 text-[#A67C52] px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-all">
+                      {isCopied ? <CheckCircle size={14} className="text-green-500"/> : <Copy size={14}/>}
+                      <span className="text-[10px] font-bold">{isCopied ? 'คัดลอกแล้ว' : 'คัดลอกเลข'}</span>
+                    </button>
                   </div>
-                  <div className="space-y-1">{(o.items || []).map((item, idx) => <p key={idx} className="text-[11px] font-bold text-dark/40">{item.qty}x {item.name} ({item.isBlended?'ปั่น':'เย็น'})</p>)}</div>
-               </div>
-             ))}
-             {orders.filter(o => o.customerId === myCustomerId).length === 0 && <div className="py-24 text-center opacity-10 font-serif italic">คุณยังไม่มีประวัติการสั่งซื้อ</div>}
-           </div>
-        </div>
-      )}
 
-      {/* Admin Login UI */}
-      {view === 'adminLogin' && (
-        <div className="flex-1 flex items-center justify-center p-10">
-          <div className="w-full max-w-sm text-center space-y-8">
-            <h2 className="text-4xl font-serif font-bold">Admin</h2>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full p-5 rounded-3xl text-center text-2xl font-serif bg-white shadow-inner" placeholder="••••••" />
-            <button onClick={() => adminPassword === '570402' ? setIsAdminLoggedIn(true) || setView('admin') : alert('รหัสผิดครับ')} className="w-full bg-dark text-white py-5 rounded-[2rem] font-bold shadow-2xl">เข้าสู่ระบบหลังบ้าน</button>
+                  <label className="cursor-pointer bg-[#3D2C1E] text-white py-4 px-8 rounded-2xl text-[11px] font-bold inline-flex items-center gap-2 shadow-lg active:scale-95">
+                    <Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แนบรูปสลิป'}
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(e.target.files[0]);
+                    }} />
+                  </label>
+                  {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white" alt="slip" />}
+                </div>
+
+                <button onClick={handleOrder} disabled={isLoading || !slipImage} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg shadow-xl transition-all ${slipImage ? 'bg-[#A67C52] text-white shadow-[#A67C52]/30' : 'bg-gray-100 text-gray-300'}`}>
+                  {isLoading ? 'กำลังประมวลผล...' : `ยืนยันการสั่งซื้อ • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* หน้า 3: ประวัติสั่งซื้อ */}
+        {view === 'myOrders' && (
+          <div className="p-6 space-y-6 flex-1">
+             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
+             <h2 className="text-3xl font-serif font-bold">ประวัติการสั่งซื้อ</h2>
+             <div className="space-y-6">
+               {orders.filter(o => o.userId === lineProfile.userId).length > 0 ? (
+                 orders.filter(o => o.userId === lineProfile.userId).map(o => (
+                   <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 p-4">
+                      <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
+                        <div><span className="text-[10px] font-bold text-[#A67C52] uppercase">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
+                        <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
+                      </div>
+                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>))}</div>
+                   </div>
+                 ))
+               ) : (
+                 <div className="py-24 text-center opacity-10 font-serif italic">คุณยังไม่มีประวัติการสั่งซื้อครับ 🐮</div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {/* หน้า 4: ระบบแอดมิน */}
+        {view === 'admin' && (
+          <div className="p-6 space-y-6 flex-1 bg-white min-h-screen">
+            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
+            <h2 className="text-2xl font-serif font-bold">รายการสั่งซื้อทั้งหมด</h2>
+            <div className="space-y-4">
+              {orders.map(o => (
+                <div key={o.id} className="border border-gray-100 p-4 rounded-2xl shadow-sm">
+                  <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
+                  <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
+                  <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
+                    {o.items.map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => window.open(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>
+                    <button onClick={async () => await deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-500 px-4 rounded-xl text-xs font-bold"><Trash2 size={16}/></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* --- Modal เลือกตัวเลือกสินค้า --- */}
+      {optionModalItem && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-md p-8 space-y-8 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-serif font-bold">{optionModalItem.name}</h3>
+              <button onClick={() => setOptionModalItem(null)} className="p-3 bg-gray-50 rounded-2xl text-gray-400"><X/></button>
+            </div>
+            <div className="space-y-6">
+              <div>
+                <label className="text-sm font-bold block mb-4 text-gray-400">ระดับความหวาน</label>
+                <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
+                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E]' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
+                ))}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-6 rounded-3xl border-2 font-bold flex flex-col items-center gap-3 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Coffee size={28}/><span className="text-xs">เมนูเย็น</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-6 rounded-3xl border-2 font-bold flex flex-col items-center gap-3 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Zap size={28}/><span className="text-xs">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+              </div>
+            </div>
+            <button onClick={() => {
+                const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0);
+                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}`;
+                setCart(prev => {
+                  const ex = prev.find(i => i.cartId === cartId);
+                  if (ex) return prev.map(i => i.cartId === cartId ? { ...i, qty: i.qty + 1 } : i);
+                  return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, qty: 1 }];
+                });
+                setOptionModalItem(null);
+              }} className="w-full py-5 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"><Plus size={20}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0)}</button>
           </div>
         </div>
       )}

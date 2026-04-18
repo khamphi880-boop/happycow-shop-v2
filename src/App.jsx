@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -47,7 +47,7 @@ export default function App() {
 
   // Menu Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
-  const [editingMenu, setEditingMenu] = useState(null); // สำหรับเก็บข้อมูลเมนูที่กำลังแก้ไข
+  const [editingMenu, setEditingMenu] = useState(null); 
   
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true });
@@ -96,32 +96,25 @@ export default function App() {
     if (window.liff && !window.liff.isLoggedIn()) window.liff.login();
   };
 
-  // --- ฟังก์ชันจัดการเมนู ---
-  const handleAddMenu = async () => {
-    if (!newMenu.name || !newMenu.price || !newMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
+  // --- จัดการเมนู (เพิ่ม/แก้ไข/ลบ) ---
+  const handleSaveMenu = async () => {
+    const data = editingMenu || newMenu;
+    if (!data.name || !data.price || !data.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
+    
     try {
-      await addDoc(collection(db, 'menus'), {
-        ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice)
-      });
-      alert('เพิ่มเมนูสำเร็จ! 🐮');
-      setNewMenu({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
-    } catch (e) { alert(e.message); }
-  };
-
-  const handleUpdateMenu = async () => {
-    if (!editingMenu.name || !editingMenu.price) return alert('กรุณากรอกข้อมูลให้ครบ');
-    try {
-      const menuRef = doc(db, 'menus', editingMenu.id);
-      await updateDoc(menuRef, {
-        name: editingMenu.name,
-        price: Number(editingMenu.price),
-        category: editingMenu.category,
-        image: editingMenu.image,
-        blendPrice: Number(editingMenu.blendPrice),
-        hasFreePearl: editingMenu.hasFreePearl
-      });
-      alert('อัปเดตเมนูเรียบร้อย! ✨');
-      setEditingMenu(null);
+      if (editingMenu) {
+        await updateDoc(doc(db, 'menus', editingMenu.id), {
+          ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice)
+        });
+        alert('แก้ไขเมนูสำเร็จ! ✨');
+        setEditingMenu(null);
+      } else {
+        await addDoc(collection(db, 'menus'), {
+          ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice)
+        });
+        alert('เพิ่มเมนูสำเร็จ! 🐮');
+        setNewMenu({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5, hasFreePearl: false });
+      }
     } catch (e) { alert(e.message); }
   };
 
@@ -153,6 +146,30 @@ export default function App() {
     try {
       await addDoc(collection(db, 'orders'), orderData);
       
+      // สร้าง Flex Message ฉบับปรับปรุง (Dynamic กรองช่องว่าง)
+      const flexBodyContents = [
+        { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "md" },
+        { type: "separator", margin: "md" },
+        ...cart.map(i => ({ 
+          type: "box", layout: "vertical", margin: "sm", 
+          contents: [
+            { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
+            { type: "text", text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
+          ]
+        })),
+        { type: "separator", margin: "md" },
+        { type: "box", layout: "vertical", margin: "md", contents: [
+          { type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" },
+          { type: "text", text: address, size: "xs", wrap: true, margin: "xs" }
+        ]},
+        note.trim() ? { type: "box", layout: "vertical", margin: "sm", backgroundColor: "#F5F5F5", paddingAll: "sm", cornerRadius: "sm", contents: [
+          { type: "text", text: "หมายเหตุถึงร้าน", size: "xxs", color: "#888888", weight: "bold" },
+          { type: "text", text: note, size: "xs", wrap: true, margin: "xs" }
+        ]} : null,
+        { type: "separator", margin: "md" },
+        { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold", size: "md" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52", size: "md" }] }
+      ].filter(Boolean);
+
       const flexMessage = {
         type: "flex", altText: "ใบเสร็จจากร้านวัวนมอารมณ์ดี",
         contents: {
@@ -169,42 +186,18 @@ export default function App() {
               }
             ] 
           },
-          body: {
-            type: "box", layout: "vertical",
-            contents: [
-              { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "md" },
-              { type: "separator", margin: "md" },
-              ...cart.map(i => ({ 
-                type: "box", layout: "vertical", margin: "sm", 
-                contents: [
-                  { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-                  { type: "text", text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • ใส่ไข่มุก' : ' • ไม่ใส่ไข่มุก') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
-                ]
-              })),
-              { type: "separator", margin: "md" },
-              { type: "box", layout: "vertical", margin: "md", contents: [{ type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" }, { type: "text", text: address, size: "xs", wrap: true, margin: "xs" }] },
-              note ? { type: "box", layout: "vertical", margin: "sm", backgroundColor: "#F5F5F5", paddingAll: "sm", cornerRadius: "sm", contents: [{ type: "text", text: "หมายเหตุถึงร้าน", size: "xxs", color: "#888888", weight: "bold" }, { type: "text", text: note, size: "xs", wrap: true, margin: "xs" }] } : { type: "spacer", size: "xs" },
-              { type: "separator", margin: "md" },
-              { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold", size: "md" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52", size: "md" }] }
-            ]
-          }
+          body: { type: "box", layout: "vertical", contents: flexBodyContents }
         }
       };
 
-      // ส่งข้อมูลไปที่ API
-      const response = await fetch('/api/sendLine', {
+      await fetch('/api/sendLine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
       });
 
-      const resData = await response.json();
-      if (!response.ok || !resData.success) {
-        console.error("LINE Send Error:", resData);
-      }
-
       setCart([]); setSlipImage(''); setAddress(''); setNote(''); setView('myOrders');
-      alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชท LINE แล้วนะครับ 🐮");
+      alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
   };
@@ -254,7 +247,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main View */}
+      {/* Main Content */}
       <main className="flex-1 pb-10">
         {view === 'shop' && (
           <div className="animate-in fade-in">
@@ -322,6 +315,7 @@ export default function App() {
                     {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white animate-in zoom-in" alt="slip preview" />}
                   </div>
                 )}
+                {paymentMethod === 'cash' && <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-orange-100 text-center animate-in fade-in"><Banknote size={30} className="mx-auto mb-3 text-orange-400" /><p className="text-xs font-bold text-orange-700 uppercase">ชำระเงินสดตอนรับสินค้า</p></div>}
                 <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white shadow-[#A67C52]/30' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
               </div>
             )}
@@ -347,7 +341,14 @@ export default function App() {
                         </div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
+                      {(o.status === 'pending' || o.status === 'cooking') && qInfo && (
+                        <div className="bg-[#F5EEDC] p-4 rounded-2xl mb-4 flex items-center justify-between border border-[#A67C52]/20 shadow-inner animate-in fade-in">
+                          <div className="flex items-center gap-3"><Clock size={20} className="text-[#A67C52]" /><div><p className="text-[10px] font-bold text-[#A67C52] uppercase">สถานะคิว</p><p className="text-sm font-bold">{o.status === 'pending' ? 'รอแอดมินรับออเดอร์' : `คิวที่ ${qInfo.currentQueue}`}</p></div></div>
+                          {o.status === 'cooking' && <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm tracking-tighter">อีก {qInfo.totalWait} คิว</p>}
+                        </div>
+                      )}
                       <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>))}</div>
+                      {o.note && <div className="mt-3 p-3 bg-gray-50 rounded-xl border-l-4 border-[#A67C52]/30 text-[11px] text-gray-600 italic">"{o.note}"</div>}
                    </div>
                  );
                })}
@@ -355,11 +356,10 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Admin Tab --- */}
         {view === 'admin' && (
           <div className="p-6 bg-white min-h-screen animate-in fade-in">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
-            <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบจัดการหลังร้าน</h2>
+            <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบแอดมิน</h2>
             <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
               {['orders', 'menus', 'settings'].map(t => (
                 <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>{t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : 'ตั้งค่า'}</button>
@@ -394,7 +394,6 @@ export default function App() {
 
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
-                {/* ฟอร์มเพิ่ม/แก้ไขเมนู */}
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
@@ -406,7 +405,7 @@ export default function App() {
                   </div>
                   <div className="flex items-center justify-center gap-2 p-2 bg-white rounded-2xl shadow-sm border border-orange-50">
                     <input type="checkbox" id="freePearl" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
-                    <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> เมนูนี้แถมไข่มุกฟรี</label>
+                    <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> เมนูนี้แถมมุกฟรี</label>
                   </div>
                   <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all">
                     <Upload size={18} className="inline mr-2"/> {(editingMenu ? editingMenu.image : newMenu.image) ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
@@ -416,13 +415,13 @@ export default function App() {
                   </label>
                   <div className="flex gap-2">
                     {editingMenu && <button onClick={() => setEditingMenu(null)} className="flex-1 bg-gray-200 text-gray-500 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">ยกเลิก</button>}
-                    <button onClick={editingMenu ? handleUpdateMenu : handleAddMenu} className="flex-[2] bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">{editingMenu ? 'บันทึกการแก้ไข' : 'บันทึกเมนูใหม่'}</button>
+                    <button onClick={handleSaveMenu} className="flex-[2] bg-[#A67C52] text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">{editingMenu ? <Save size={18}/> : <Plus size={18}/>}{editingMenu ? 'บันทึกการแก้ไข' : 'บันทึกเมนูใหม่'}</button>
                   </div>
                 </div>
                 
                 <div className="space-y-3">
                    {menuItems.map(item => (
-                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all">
+                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
                        <div className="flex items-center gap-4">
                          <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
                          <div>
@@ -461,13 +460,13 @@ export default function App() {
         )}
       </main>
 
-      {/* --- Modal ตัวเลือกเมนู --- */}
+      {/* --- Modal ตัวเลือกสินค้า --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 active:text-gray-600"><X/></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:text-gray-600"><X/></button></div>
             <div className="space-y-8">
-              <div><label className="text-sm font-bold block mb-4 text-gray-400 uppercase tracking-widest text-[10px]">ระดับความหวาน</label>
+              <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
                 <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
                     <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
                 ))}</div>
@@ -504,8 +503,8 @@ export default function App() {
 
       {/* Modal ดูสลิป */}
       {selectedSlip && selectedSlip !== 'cash_payment' && (
-        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setSelectedSlip(null)}>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl animate-in zoom-in duration-300" alt="slip big" />
+        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip big" />
         </div>
       )}
 
@@ -513,14 +512,14 @@ export default function App() {
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
           <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
-            <h3 className="font-bold text-xl mb-8 text-[#3D2C1E]">Admin Login</h3>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52]" placeholder="••••••" />
+            <h3 className="font-bold text-xl mb-8 text-[#3D2C1E]">แอดมินเข้าสู่ระบบ</h3>
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52] transition-all" placeholder="••••••" />
             <div className="flex gap-4">
                <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl">ยกเลิก</button>
                <button onClick={() => {
                  if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
-                 else { alert('Wrong Password!'); setAdminPassword(''); }
-               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl">ยืนยัน</button>
+                 else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
+               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg transition-all active:scale-95">ยืนยัน</button>
             </div>
           </div>
         </div>

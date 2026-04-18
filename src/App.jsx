@@ -26,12 +26,15 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
-  const [view, setView] = useState('shop'); // shop, cart, myOrders, admin_login, admin
+  const [view, setView] = useState('shop'); 
   const [isLoading, setIsLoading] = useState(true);
   
   const [address, setAddress] = useState('');
   const [slipImage, setSlipImage] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  
+  // สเตทสำหรับเปิด/ปิดหน้าต่างแอดมิน
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   
   const [optionModalItem, setOptionModalItem] = useState(null);
@@ -67,7 +70,6 @@ export default function App() {
     return () => { unsubMenu(); unsubOrders(); };
   }, []);
 
-  // ฟังก์ชันกดล็อกอิน LINE ด้วยตัวเอง
   const handleLineLogin = () => {
     if (window.liff && !window.liff.isLoggedIn()) {
       window.liff.login();
@@ -84,7 +86,6 @@ export default function App() {
   };
 
   const handleOrder = async () => {
-    // บังคับล็อกอินถ้าเป็น Guest
     if (lineProfile.userId.startsWith('guest_')) {
       return alert("เพื่อความถูกต้องในการส่งบิลใบเสร็จ กรุณากดปุ่ม 'ล็อกอิน LINE' สีเขียวด้านบนก่อนทำการสั่งซื้อนะครับ 🐮");
     }
@@ -119,16 +120,23 @@ export default function App() {
         }
       };
 
-      // ส่ง API ให้ LINE
-      await fetch('/api/sendLine', {
+      // ส่ง API ให้ LINE พร้อมดักจับ Error โชว์ให้รู้สาเหตุที่แท้จริง
+      const response = await fetch('/api/sendLine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
       });
 
+      const resultData = await response.json();
+
+      if (!response.ok || !resultData.success) {
+        alert("⚠️ ออร์เดอร์เข้าแล้ว แต่บิลไม่เด้ง!\n\nสาเหตุที่เป็นไปได้:\n1. คุณยังไม่ได้ 'เพิ่มเพื่อน' กับ LINE บอทของร้าน (บอทเลยทักไม่ได้)\n2. API Error: " + JSON.stringify(resultData));
+      } else {
+        alert("สั่งซื้อสำเร็จ! บิลถูกส่งเข้าแชท LINE แล้วครับ 🐮");
+      }
+
       setCart([]); setSlipImage(''); setAddress(''); setView('myOrders');
-      alert("สั่งซื้อสำเร็จ! บิลถูกส่งเข้าแชท LINE แล้วครับ 🐮");
     } catch (e) { 
-      alert("สั่งซื้อสำเร็จ แต่อาจมีปัญหาในการส่งบิลเข้าแชท: " + e.message); 
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ: " + e.message); 
     }
     setIsLoading(false);
   };
@@ -156,7 +164,6 @@ export default function App() {
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
-             {/* เช็คว่าเป็น Guest ไหม ถ้าใช่ให้ขึ้นปุ่มล็อกอิน */}
              {lineProfile.userId.startsWith('guest_') ? (
                <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 active:scale-95"><LogIn size={10}/> ล็อกอิน LINE เพื่อรับบิล</button>
              ) : (
@@ -165,8 +172,8 @@ export default function App() {
            </div>
         </div>
         <div className="flex gap-2">
-          {/* เปลี่ยนไปเปิดหน้า admin_login เต็มจอแทน */}
-          <button onClick={() => setView('admin_login')} className="p-2 text-gray-300 hover:text-gray-500"><Settings size={18}/></button>
+          {/* เปลี่ยนให้ปุ่มฟันเฟืองเรียก Modal ขึ้นมาแทนการสลับหน้า */}
+          <button onClick={() => setShowAdminModal(true)} className="p-2 text-gray-300 hover:text-gray-500"><Settings size={18}/></button>
           <button onClick={() => setView('myOrders')} className="p-2 text-gray-400 hover:text-gray-600"><ClipboardList/></button>
           <button onClick={() => setView('cart')} className="relative p-2 bg-[#3D2C1E] text-white rounded-xl shadow-lg w-10 h-10 flex items-center justify-center">
             {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-[#A67C52] text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#F5EEDC]">{cart.length}</span>}
@@ -178,7 +185,6 @@ export default function App() {
       {/* --- พื้นที่แสดงผลหลัก --- */}
       <main className="flex-1 pb-10">
         
-        {/* หน้า 1: หน้าร้าน */}
         {view === 'shop' && (
           <div className="animate-in fade-in">
             <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 sticky top-[73px] z-[40] bg-[#F5EEDC]/95">
@@ -209,7 +215,6 @@ export default function App() {
           </div>
         )}
 
-        {/* หน้า 2: ตะกร้าสินค้า */}
         {view === 'cart' && (
           <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
@@ -261,7 +266,6 @@ export default function App() {
           </div>
         )}
 
-        {/* หน้า 3: ประวัติสั่งซื้อ */}
         {view === 'myOrders' && (
           <div className="p-6 space-y-6 flex-1">
              <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
@@ -284,34 +288,10 @@ export default function App() {
           </div>
         )}
 
-        {/* หน้า 4: หน้าจอเข้าสู่ระบบ Admin (แก้ปัญหา Pop-up บล็อกใน LINE) */}
-        {view === 'admin_login' && (
-          <div className="p-10 flex flex-col items-center justify-center min-h-[70vh] bg-white mt-4 rounded-t-[3rem] shadow-2xl animate-in fade-in">
-            <h2 className="text-2xl font-serif font-bold mb-2 text-[#3D2C1E]">ระบบแอดมิน</h2>
-            <p className="text-xs text-gray-400 mb-8">กรุณากรอกรหัสผ่านเพื่อเข้าสู่ระบบ</p>
-            
-            <input 
-              type="password" 
-              value={adminPassword} 
-              onChange={e => setAdminPassword(e.target.value)} 
-              className="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-2xl mb-6 text-center text-2xl tracking-[0.5em] focus:border-[#A67C52] outline-none" 
-              placeholder="••••••" 
-            />
-            
-            <div className="flex gap-4 w-full">
-              <button onClick={() => { setView('shop'); setAdminPassword(''); }} className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-bold active:scale-95">ยกเลิก</button>
-              <button onClick={() => {
-                if(adminPassword === '570402') { setView('admin'); setAdminPassword(''); }
-                else { alert('รหัสผ่านไม่ถูกต้องครับ'); setAdminPassword(''); }
-              }} className="flex-1 bg-[#3D2C1E] text-white py-4 rounded-2xl font-bold active:scale-95 shadow-lg">ยืนยัน</button>
-            </div>
-          </div>
-        )}
-
         {/* หน้า 5: ระบบแอดมิน */}
         {view === 'admin' && (
           <div className="p-6 space-y-6 flex-1 bg-white min-h-screen">
-            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> ออกจากระบบแอดมิน</button>
+            <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <h2 className="text-2xl font-serif font-bold">รายการสั่งซื้อทั้งหมด</h2>
             <div className="space-y-4">
               {orders.map(o => (
@@ -331,6 +311,32 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* --- Modal กรอกรหัสแอดมิน (ลอยทับทุกอย่างบนหน้าจอ แก้ปัญหาแอป LINE บล็อกการเปลี่ยนหน้า) --- */}
+      {showAdminModal && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="font-bold text-xl mb-4 text-[#3D2C1E]">เข้าสู่ระบบแอดมิน</h3>
+            <p className="text-xs text-gray-400 mb-8">กรุณากรอกรหัสผ่านเพื่อจัดการร้านค้า</p>
+            
+            <input 
+              type="password" 
+              value={adminPassword} 
+              onChange={e => setAdminPassword(e.target.value)} 
+              className="w-full bg-gray-50 border-2 border-gray-100 focus:border-[#A67C52] outline-none p-4 rounded-2xl mb-6 text-center text-2xl tracking-[0.5em]" 
+              placeholder="••••••" 
+            />
+            
+            <div className="flex gap-4">
+               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl active:scale-95">ยกเลิก</button>
+               <button onClick={() => {
+                 if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
+                 else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
+               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl active:scale-95 shadow-lg">ยืนยัน</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Modal เลือกตัวเลือกสินค้า --- */}
       {optionModalItem && (

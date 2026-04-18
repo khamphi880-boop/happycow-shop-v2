@@ -15,7 +15,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const LIFF_ID = "2009817000-ySEM8T5K"; 
+const LIFF_ID = "2009828681-C1cb8QC3"; 
 
 const CATEGORIES = ['นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];

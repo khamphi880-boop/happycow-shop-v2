@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -29,8 +29,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   
   const [address, setAddress] = useState('');
+  const [note, setNote] = useState(''); // สเตทสำหรับหมายเหตุลูกค้า
   const [slipImage, setSlipImage] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('promptpay'); // 'promptpay' | 'cash'
+  const [paymentMethod, setPaymentMethod] = useState('promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
   
   // แอดมิน
@@ -133,6 +134,7 @@ export default function App() {
       userId: lineProfile.userId, 
       lineName: lineProfile.displayName, 
       address, 
+      note, // บันทึกหมายเหตุลงฐานข้อมูล
       slipImage: paymentMethod === 'promptpay' ? slipImage : 'cash_payment',
       paymentMethod: paymentMethod
     };
@@ -152,6 +154,7 @@ export default function App() {
               { type: "text", text: `วิธีชำระเงิน: ${paymentMethod === 'promptpay' ? 'โอนเงิน' : 'เงินสด'}`, size: "xs", color: "#A67C52", margin: "xs" },
               { type: "separator", margin: "md" },
               ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] })),
+              note ? { type: "box", layout: "vertical", margin: "md", backgroundColor: "#F9F9F9", paddingAll: "sm", contents: [{ type: "text", text: `หมายเหตุ: ${note}`, size: "xxs", color: "#888888", wrap: true }] } : { type: "spacer", size: "xs" },
               { type: "separator", margin: "md" },
               { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52" }] }
             ]
@@ -164,7 +167,7 @@ export default function App() {
         body: JSON.stringify({ userId: lineProfile.userId, flexMessage })
       });
 
-      setCart([]); setSlipImage(''); setAddress(''); setView('myOrders');
+      setCart([]); setSlipImage(''); setAddress(''); setNote(''); setView('myOrders');
       alert("สั่งซื้อสำเร็จ! รอแอดมินตรวจสอบออเดอร์นะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
@@ -196,11 +199,11 @@ export default function App() {
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('shop')}>
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
-             <h1 className="font-serif font-bold text-lg">วัวนมอารมณ์ดี</h1>
+             <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
              {(lineProfile.userId || '').startsWith('guest_') ? (
-               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1"><LogIn size={10}/> ล็อกอิน LINE</button>
+               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 active:scale-95 transition-all"><LogIn size={10}/> ล็อกอิน LINE</button>
              ) : (
-               <p className="text-[9px] font-bold text-green-700 uppercase">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
+               <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
              )}
            </div>
         </div>
@@ -208,7 +211,7 @@ export default function App() {
           <button onClick={() => setShowAdminModal(true)} className="p-2 text-gray-300"><Settings size={18}/></button>
           <button onClick={() => setView('myOrders')} className="p-2 text-gray-400"><ClipboardList/></button>
           <button onClick={() => setView('cart')} className="relative p-2 bg-[#3D2C1E] text-white rounded-xl w-10 h-10 flex items-center justify-center">
-            {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-[#A67C52] text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#F5EEDC]">{cart.length}</span>}
+            {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-[#A67C52] text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#F5EEDC] shadow-sm">{cart.length}</span>}
             <ShoppingCart size={20}/>
           </button>
         </div>
@@ -219,14 +222,14 @@ export default function App() {
           <div className="animate-in fade-in">
             <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 sticky top-[73px] z-[40] bg-[#F5EEDC]/95">
               {CATEGORIES.map(c => (
-                <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap border ${activeCategory === c ? 'bg-[#3D2C1E] text-white' : 'bg-white text-gray-400'}`}>{c}</button>
+                <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap border transition-all ${activeCategory === c ? 'bg-[#3D2C1E] text-white' : 'bg-white text-gray-400'}`}>{c}</button>
               ))}
             </div>
             <div className="p-5 grid grid-cols-2 gap-5">
               {menuItems.filter(i => i.category === activeCategory).map(item => (
                 <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer">
                   <div className="aspect-square bg-gray-50"><img src={item.image} className="w-full h-full object-cover" /></div>
-                  <div className="p-4 text-center"><h4 className="font-bold text-sm mb-1">{item.name}</h4><p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p></div>
+                  <div className="p-4 text-center"><h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4><p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p></div>
                 </div>
               ))}
             </div>
@@ -250,7 +253,6 @@ export default function App() {
 
             {cart.length > 0 && (
               <div className="space-y-6 pt-6 border-t border-gray-100">
-                {/* เลือกวิธีชำระเงิน */}
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block">วิธีชำระเงิน</label>
                   <div className="grid grid-cols-2 gap-3">
@@ -265,7 +267,13 @@ export default function App() {
 
                 <div>
                   <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง / เบอร์โทร</label>
-                  <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเบอร์โทร และจุดส่งสินค้า..." className="w-full p-5 rounded-3xl bg-gray-50 h-32 text-sm outline-none border border-gray-100 focus:border-[#A67C52]" />
+                  <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเบอร์โทร และจุดส่งสินค้า..." className="w-full p-5 rounded-3xl bg-gray-50 h-24 text-sm outline-none border border-gray-100 focus:border-[#A67C52] transition-all" />
+                </div>
+
+                {/* ส่วนหมายเหตุถึงร้านค้า */}
+                <div>
+                  <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2 flex items-center gap-1"><MessageSquare size={14}/> หมายเหตุถึงร้านค้า (ถ้ามี)</label>
+                  <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อยมาก, แยกน้ำแข็ง, รับที่หน้าตึก..." className="w-full p-4 rounded-2xl bg-gray-50 text-sm outline-none border border-gray-100 focus:border-[#A67C52] transition-all" />
                 </div>
                 
                 {paymentMethod === 'promptpay' && (
@@ -286,14 +294,14 @@ export default function App() {
                 )}
 
                 {paymentMethod === 'cash' && (
-                  <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-orange-100 text-center">
+                  <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-orange-100 text-center animate-in fade-in">
                     <Banknote size={30} className="mx-auto mb-3 text-orange-400" />
                     <p className="text-xs font-bold text-orange-700">ชำระเงินสดตอนรับสินค้า</p>
-                    <p className="text-[10px] text-orange-600 mt-1">กรุณาเตรียมเงินให้พอดีหรือระบุในที่อยู่หากต้องการทอนเงิน</p>
+                    <p className="text-[10px] text-orange-600 mt-1">กรุณาเตรียมเงินให้พอดีหรือระบุในหมายเหตุหากต้องการทอนเงิน</p>
                   </div>
                 )}
 
-                <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
+                <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
               </div>
             )}
           </div>
@@ -310,7 +318,7 @@ export default function App() {
                    <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
                       <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
                         <div>
-                          <span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span>
+                          <span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider tracking-tighter">บิล #{o.id.slice(0,6)}</span>
                           <div className="flex items-center gap-2 mt-1">
                              <div className={`w-2 h-2 rounded-full ${o.status === 'pending' ? 'bg-orange-400' : o.status === 'cooking' ? 'bg-blue-400 animate-pulse' : 'bg-green-500'}`}></div>
                              <p className="text-xs font-bold text-[#3D2C1E] uppercase">{o.status === 'pending' ? 'รอตรวจสอบ' : o.status === 'cooking' ? 'กำลังปรุง' : 'สำเร็จแล้ว'}</p>
@@ -319,7 +327,6 @@ export default function App() {
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
                       
-                      {/* ส่วนแสดงสถานะคิว */}
                       {(o.status === 'pending' || o.status === 'cooking') && qInfo && (
                         <div className="bg-[#F5EEDC] p-4 rounded-2xl mb-4 flex items-center justify-between border border-[#A67C52]/20">
                           <div className="flex items-center gap-3">
@@ -329,7 +336,7 @@ export default function App() {
                               <p className="text-sm font-bold">{o.status === 'pending' ? 'รอแอดมินรับออเดอร์' : `คิวที่ ${qInfo.currentQueue}`}</p>
                             </div>
                           </div>
-                          {o.status === 'cooking' && <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm">อีก {qInfo.totalWait} คิวข้างหน้า</p>}
+                          {o.status === 'cooking' && <p className="text-[10px] font-bold bg-white px-3 py-1 rounded-full text-gray-500 shadow-sm">อีก {qInfo.totalWait} คิว</p>}
                         </div>
                       )}
 
@@ -338,6 +345,13 @@ export default function App() {
                           <p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>
                         ))}
                       </div>
+
+                      {o.note && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded-xl border-l-4 border-[#A67C52]/30">
+                           <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">หมายเหตุ:</p>
+                           <p className="text-[11px] text-gray-600 leading-tight">{o.note}</p>
+                        </div>
+                      )}
                    </div>
                  );
                })}
@@ -349,8 +363,8 @@ export default function App() {
         {view === 'admin' && (
           <div className="p-6 bg-white min-h-screen">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
-            <h2 className="text-2xl font-serif font-bold mb-6">ระบบจัดการหลังร้าน</h2>
-            <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6">
+            <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบจัดการหลังร้าน</h2>
+            <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
               {['orders', 'menus', 'settings'].map(t => (
                 <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500'}`}>{t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : 'ตั้งค่า'}</button>
               ))}
@@ -359,11 +373,11 @@ export default function App() {
             {adminTab === 'orders' && (
               <div className="space-y-4">
                 {orders.map((o, idx) => (
-                    <div key={o.id} className="border border-gray-100 p-5 rounded-3xl shadow-sm bg-white">
+                    <div key={o.id} className="border border-gray-100 p-5 rounded-3xl shadow-sm bg-white animate-in fade-in">
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
                           <span className="bg-[#3D2C1E] text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{idx + 1}</span>
-                          <span className="font-bold text-sm">{o.lineName}</span>
+                          <span className="font-bold text-sm text-[#3D2C1E]">{o.lineName}</span>
                         </div>
                         <div className="text-right">
                           <span className="text-orange-600 font-bold block">฿{o.total}</span>
@@ -373,7 +387,7 @@ export default function App() {
                       
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
                       
-                      <div className="space-y-1 border-t pt-3 mb-4">
+                      <div className="space-y-1 border-t pt-3 mb-3">
                         {(o.items || []).map((i, idx) => (
                           <div key={idx} className="text-xs text-gray-600 flex justify-between">
                             <span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'} • {i.sweetness})</span>
@@ -382,19 +396,26 @@ export default function App() {
                         ))}
                       </div>
 
+                      {/* แสดงหมายเหตุให้แอดมินเห็น */}
+                      {o.note && (
+                        <div className="mb-4 p-3 bg-orange-50 rounded-2xl border-2 border-orange-100">
+                          <p className="text-[9px] font-bold text-orange-600 uppercase mb-1">หมายเหตุลูกค้า:</p>
+                          <p className="text-xs text-orange-900 font-bold">{o.note}</p>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-2 mb-2">
-                        {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm"><Eye size={14}/> ดูสลิป</button>}
-                        {o.paymentMethod === 'cash' && <div className="bg-orange-50 text-orange-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm opacity-50"><Banknote size={14}/> จ่ายเงินสด</div>}
-                        <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-400 py-3 rounded-xl flex items-center justify-center"><Trash2 size={16}/></button>
+                        {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"><Eye size={14}/> ดูสลิป</button>}
+                        {o.paymentMethod === 'cash' && <div className="bg-gray-50 text-gray-400 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm opacity-50"><Banknote size={14}/> จ่ายเงินสด</div>}
+                        <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-400 py-3 rounded-xl flex items-center justify-center transition-all active:scale-95"><Trash2 size={16}/></button>
                       </div>
 
-                      {/* ส่วนจัดการสถานะ - แอดมินกดยืนยันออเดอร์ */}
                       <div className="flex gap-2 border-t pt-3 mt-2">
                         {o.status === 'pending' && (
                           <button onClick={() => updateOrderStatus(o.id, 'cooking')} className="flex-1 bg-orange-400 text-white py-4 rounded-xl text-[11px] font-bold shadow-lg animate-pulse">กดยอมรับออเดอร์</button>
                         )}
                         {o.status === 'cooking' && (
-                          <button onClick={() => updateOrderStatus(o.id, 'completed')} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1"><Check size={14}/> เสร็จสิ้น (ส่งสินค้า)</button>
+                          <button onClick={() => updateOrderStatus(o.id, 'completed')} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 transition-all active:scale-95"><Check size={14}/> เสร็จสิ้น (ส่งสินค้า)</button>
                         )}
                         {o.status === 'completed' && (
                           <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จแล้ว</div>
@@ -408,7 +429,7 @@ export default function App() {
             )}
 
             {adminTab === 'menus' && (
-              <div className="space-y-8">
+              <div className="space-y-8 animate-in fade-in">
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center">
                   <h3 className="font-bold text-sm text-[#A67C52]">เพิ่มเมนูใหม่</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
@@ -418,7 +439,7 @@ export default function App() {
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
-                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400">
+                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 transition-all hover:bg-gray-50">
                     <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => {
                       const fr = new FileReader(); fr.onload = (ev) => setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
@@ -429,12 +450,12 @@ export default function App() {
                 </div>
                 <div className="space-y-3">
                    {menuItems.map(item => (
-                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm">
+                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
                        <div className="flex items-center gap-4">
                          <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" />
                          <div><p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p><p className="text-xs text-[#A67C52] font-bold">฿{item.price}</p></div>
                        </div>
-                       <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 hover:text-red-500 transition-all"><Trash2 size={18}/></button>
+                       <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 hover:text-red-500 transition-all active:scale-90"><Trash2 size={18}/></button>
                      </div>
                    ))}
                 </div>
@@ -442,7 +463,7 @@ export default function App() {
             )}
 
             {adminTab === 'settings' && (
-              <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-5 text-center">
+              <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-5 text-center animate-in fade-in">
                 <h3 className="font-bold text-sm text-[#A67C52]">ตั้งค่าช่องทางชำระเงิน</h3>
                 <div className="text-left">
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">หมายเลขพร้อมเพย์</label>
@@ -450,7 +471,7 @@ export default function App() {
                 </div>
                 <div className="text-left">
                   <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-1 block">อัปโหลด QR Code ร้าน</label>
-                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400">
+                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 transition-all hover:bg-gray-50">
                     <Upload size={18} className="inline mr-2"/> {editQrCodeImage ? 'เปลี่ยนรูป QR Code' : 'อัปโหลดรูป QR Code'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => {
                       const fr = new FileReader(); fr.onload = (ev) => setEditQrCodeImage(ev.target.result); fr.readAsDataURL(e.target.files[0]);
@@ -471,23 +492,23 @@ export default function App() {
       {/* Modal ดูสลิป */}
       {selectedSlip && selectedSlip !== 'cash_payment' && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setSelectedSlip(null)}>
-          <button className="absolute top-10 right-10 text-white p-3 bg-white/20 rounded-full"><X size={30}/></button>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10" />
+          <button className="absolute top-10 right-10 text-white p-3 bg-white/20 rounded-full transition-all hover:bg-white/30"><X size={30}/></button>
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in duration-300" />
         </div>
       )}
 
       {/* Modal แอดมิน */}
       {showAdminModal && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4">
-          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
+          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center animate-in zoom-in duration-300">
             <h3 className="font-bold text-xl mb-2 text-[#3D2C1E]">แอดมินเข้าสู่ระบบ</h3>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52]" placeholder="••••••" />
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-[#A67C52] transition-all" placeholder="••••••" />
             <div className="flex gap-4">
-               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl">ยกเลิก</button>
+               <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl transition-all hover:bg-gray-200">ยกเลิก</button>
                <button onClick={() => {
                  if(adminPassword === '570402') { setView('admin'); setShowAdminModal(false); setAdminPassword(''); }
                  else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
-               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg">ยืนยัน</button>
+               }} className="flex-1 py-4 bg-[#3D2C1E] text-white font-bold rounded-2xl shadow-lg transition-all active:scale-95">ยืนยัน</button>
             </div>
           </div>
         </div>
@@ -495,9 +516,9 @@ export default function App() {
 
       {/* Modal เลือกเมนู */}
       {optionModalItem && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400"><X/></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-[#3D2C1E]">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:text-gray-600"><X/></button></div>
             <div className="space-y-8">
               <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
                 <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
@@ -505,8 +526,8 @@ export default function App() {
                 ))}</div>
               </div>
               <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs">เมนูเย็น</span></button>
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs">เมนูเย็น</span></button>
+                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
               </div>
             </div>
             <button onClick={() => {

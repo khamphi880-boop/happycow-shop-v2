@@ -15,7 +15,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const LIFF_ID = "2009828681-C1cb8QC3"; // ไอดี LIFF ใหม่ล่าสุดของคุณ
+const LIFF_ID = "2009828681-C1cb8QC3"; 
 
 const CATEGORIES = ['นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
@@ -34,18 +34,15 @@ export default function App() {
   const [paymentMethod, setPaymentMethod] = useState('promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
   
-  // สถานะสำหรับ Admin
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
-  // ตั้งค่าร้านค้า
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // สเตทเพิ่มเมนูใหม่
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: CATEGORIES[0], image: '', blendPrice: 5 });
   
   const [optionModalItem, setOptionModalItem] = useState(null);
@@ -155,7 +152,31 @@ export default function App() {
             contents: [
               { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "md" },
               { type: "separator", margin: "md" },
-              ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3, wrap: true }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] })),
+              
+              // แก้ไขส่วนแสดงรายละเอียดสินค้าในบิลให้ระบุครบถ้วน
+              ...cart.map(i => ({ 
+                type: "box", 
+                layout: "vertical", 
+                margin: "sm", 
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      { type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3, wrap: true, weight: "bold" },
+                      { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }
+                    ]
+                  },
+                  {
+                    type: "text",
+                    text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness})`,
+                    size: "xxs",
+                    color: "#888888",
+                    margin: "xs"
+                  }
+                ]
+              })),
+
               { type: "separator", margin: "md" },
               { type: "box", layout: "vertical", margin: "md", contents: [
                 { type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" },
@@ -178,7 +199,7 @@ export default function App() {
       });
 
       setCart([]); setSlipImage(''); setAddress(''); setNote(''); setView('myOrders');
-      alert("สั่งซื้อสำเร็จ! รอแอดมินรับออเดอร์นะครับ 🐮");
+      alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
   };

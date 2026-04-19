@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Flame } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Flame, Pencil } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc } from 'firebase/firestore';
 
@@ -24,7 +24,7 @@ const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [toppings, setToppings] = useState([]); // เพิ่ม State สำหรับเก็บท็อปปิ้ง
+  const [toppings, setToppings] = useState([]); 
   const [cart, setCart] = useState([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
   const [view, setView] = useState('shop'); 
@@ -42,14 +42,16 @@ export default function App() {
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // แก้ไขตอนเพิ่มเมนู ให้ category เริ่มต้นที่ 'นม' (ไม่ใช่เมนูขายดี)
+  // State สำหรับจัดการเมนูและท็อปปิ้ง (รองรับการแก้ไข)
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 });
-  const [newTopping, setNewTopping] = useState({ name: '', price: '' }); // เพิ่ม State สำหรับสร้างท็อปปิ้งใหม่
+  const [editingMenuId, setEditingMenuId] = useState(null); // เช็คว่ากำลังแก้ไขเมนูไหนอยู่
   
-  const [viewSlipImage, setViewSlipImage] = useState(null); // State สำหรับเปิดดูรูปสลิป
+  const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
+  
+  const [viewSlipImage, setViewSlipImage] = useState(null); 
   
   const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [] }); // เพิ่ม selectedToppings
+  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [], remark: '' }); // เพิ่ม remark (หมายเหตุ)
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
@@ -107,31 +109,67 @@ export default function App() {
       { name: "นมสดฮอกไกโดเย็น", price: 45, category: "นม", image: "https://images.unsplash.com/photo-1550583724-1255818c053b?w=400", blendPrice: 5 },
       { name: "ชาไทยต้นตำรับ", price: 40, category: "ชา", image: "https://images.unsplash.com/photo-1594631252845-29fc4586d517?w=400", blendPrice: 5 }
     ];
+    const sampleToppings = [
+      { name: "ไข่มุก", price: 5 },
+      { name: "วิปครีม", price: 15 }
+    ];
+
     for (const item of samples) await addDoc(collection(db, 'menus'), item);
-    alert("สร้างเมนูแนะนำสำเร็จครับ!");
+    for (const top of sampleToppings) await addDoc(collection(db, 'toppings'), top);
+    
+    alert("สร้างเมนูและท็อปปิ้ง (ไข่มุก) แนะนำสำเร็จครับ!");
   };
 
-  const handleAddMenu = async () => {
+  // ฟังก์ชันเพิ่ม หรือ แก้ไขเมนู
+  const handleSaveMenu = async () => {
     if (!newMenu.name || !newMenu.price || !newMenu.image) {
       return alert('กรุณากรอกข้อมูลให้ครบถ้วนครับ');
     }
-    // ป้องกันการเลือกเพิ่มลงหมวด 'เมนูขายดี' ตรงๆ
     if (newMenu.category === '🔥 เมนูขายดี') {
       return alert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
     }
+    
     try {
-      await addDoc(collection(db, 'menus'), {
-        name: newMenu.name,
-        price: Number(newMenu.price),
-        category: newMenu.category,
-        image: newMenu.image,
-        blendPrice: Number(newMenu.blendPrice)
-      });
-      alert('เพิ่มเมนูสำเร็จ! 🐮');
+      if (editingMenuId) {
+        // อัปเดตเมนูเดิม
+        await setDoc(doc(db, 'menus', editingMenuId), {
+          name: newMenu.name,
+          price: Number(newMenu.price),
+          category: newMenu.category,
+          image: newMenu.image,
+          blendPrice: Number(newMenu.blendPrice)
+        }, { merge: true });
+        alert('แก้ไขเมนูสำเร็จ! 🐮');
+      } else {
+        // เพิ่มเมนูใหม่
+        await addDoc(collection(db, 'menus'), {
+          name: newMenu.name,
+          price: Number(newMenu.price),
+          category: newMenu.category,
+          image: newMenu.image,
+          blendPrice: Number(newMenu.blendPrice)
+        });
+        alert('เพิ่มเมนูสำเร็จ! 🐮');
+      }
+      // เคลียร์ฟอร์ม
       setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 });
+      setEditingMenuId(null);
     } catch (e) {
       alert("Error: " + e.message);
     }
+  };
+
+  const handleEditMenuBtn = (item) => {
+    setNewMenu({
+      name: item.name,
+      price: item.price,
+      category: item.category,
+      image: item.image,
+      blendPrice: item.blendPrice || 5
+    });
+    setEditingMenuId(item.id);
+    setAdminTab('menus');
+    window.scrollTo({ top: 0, behavior: 'smooth' }); // เลื่อนจอขึ้นไปบนสุดให้เห็นฟอร์ม
   };
 
   const handleAddTopping = async () => {
@@ -197,9 +235,15 @@ export default function App() {
             contents: [
               { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName || 'ลูกค้า'}`, weight: "bold", size: "sm" },
               { type: "separator", margin: "md" },
-              ...cart.map(i => {
+              ...cart.flatMap(i => {
                 const toppingText = i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(', ')}` : '';
-                return { type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] };
+                const mainItem = { type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] };
+                
+                // ถ้ารายการนี้มีหมายเหตุ ให้เพิ่มกล่องข้อความสีแดงต่อท้ายในบิล LINE
+                if (i.remark) {
+                  return [mainItem, { type: "box", layout: "horizontal", margin: "none", contents: [{ type: "text", text: `*หมายเหตุ: ${i.remark}`, size: "xs", color: "#ef4444", flex: 1, wrap: true }] }];
+                }
+                return [mainItem];
               }),
               { type: "separator", margin: "md" },
               { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52" }] }
@@ -239,33 +283,26 @@ export default function App() {
   const bestSellers = useMemo(() => {
     if (orders.length === 0 || menuItems.length === 0) return [];
     
-    // 1. นับจำนวนครั้งที่ถูกสั่ง
     const salesCount = {};
     orders.forEach(order => {
       (order.items || []).forEach(item => {
-        // อ้างอิงจากชื่อเมนู เพราะไอดีในตะกร้าอาจเปลี่ยนไปตามความหวาน/ปั่น
         salesCount[item.name] = (salesCount[item.name] || 0) + item.qty;
       });
     });
 
-    // 2. ดึงข้อมูลเมนูจริงมาจับคู่กับยอดขาย
     let sortedMenus = menuItems.map(menu => ({
       ...menu,
       sales: salesCount[menu.name] || 0
     }));
 
-    // 3. เรียงลำดับจากยอดขายมากไปน้อย (เอาเฉพาะที่เคยขายได้)
     sortedMenus = sortedMenus.filter(m => m.sales > 0).sort((a, b) => b.sales - a.sales);
     
-    // 4. ถ้าไม่มีเมนูไหนเคยขายได้เลย ให้สุ่มเอาเมนูมาโชว์ 4 อัน
     if (sortedMenus.length === 0) {
       return menuItems.slice(0, 4);
     }
-    
     return sortedMenus;
   }, [orders, menuItems]);
 
-  // กรองเมนูตามหมวดหมู่
   const filteredItems = useMemo(() => {
     if (activeCategory === '🔥 เมนูขายดี') {
       return bestSellers;
@@ -329,8 +366,8 @@ export default function App() {
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
                   {filteredItems.map((item, index) => (
-                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, selectedToppings: []}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
-                      {/* ป้ายกำกับอันดับขายดี (เฉพาะหมวดขายดี) */}
+                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, selectedToppings: [], remark: ''}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
+                      {/* ป้ายกำกับอันดับขายดี */}
                       {activeCategory === '🔥 เมนูขายดี' && (
                         <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-sm flex items-center gap-1">
                           อันดับ {index + 1}
@@ -340,7 +377,6 @@ export default function App() {
                       <div className="p-4 text-center">
                         <h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4>
                         <p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p>
-                        {/* แสดงยอดขายเล็กๆ (เฉพาะหมวดขายดี) */}
                         {activeCategory === '🔥 เมนูขายดี' && item.sales > 0 && (
                           <p className="text-[9px] text-gray-400 mt-1">ขายไปแล้ว {item.sales} แก้ว</p>
                         )}
@@ -374,13 +410,15 @@ export default function App() {
             
             <div className="space-y-4">
                {cart.map(i => (
-                 <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
+                 <div key={i.cartId} className="flex justify-between items-start p-4 bg-gray-50 rounded-2xl">
                    <div className="flex-1 font-bold text-sm">
                      {i.qty}x {i.name} <br/>
                      <span className="text-gray-400 text-[10px] font-normal uppercase">
                        ({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})
                        {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
                      </span>
+                     {/* แสดงหมายเหตุในตะกร้า */}
+                     {i.remark && <div className="text-[10px] text-red-500 mt-1">* หมายเหตุ: {i.remark}</div>}
                    </div>
                    <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
                  </div>
@@ -398,7 +436,6 @@ export default function App() {
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] text-center border-2 border-dashed border-gray-200">
                   <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
                   
-                  {/* แสดงรูป QR Code ที่อัปโหลด หรือ สร้างอัตโนมัติถ้าไม่ได้อัปโหลด */}
                   {storeSettings.qrCodeImage ? (
                     <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl shadow-md object-contain" alt="QR Code ของร้าน" />
                   ) : (
@@ -443,10 +480,13 @@ export default function App() {
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
                       <div className="space-y-1">{(o.items || []).map((item, idx) => (
-                        <p key={idx} className="text-[11px] font-bold text-gray-400">
-                          {item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})
-                          {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
-                        </p>
+                        <div key={idx} className="mb-2">
+                          <p className="text-[11px] font-bold text-gray-400">
+                            {item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})
+                            {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
+                          </p>
+                          {item.remark && <p className="text-[10px] text-red-400">* หมายเหตุ: {item.remark}</p>}
+                        </div>
                       ))}</div>
                    </div>
                  ))
@@ -479,9 +519,10 @@ export default function App() {
                     <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
                     <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
                       {(o.items || []).map((i, idx) => (
-                        <div key={idx} className="text-xs text-gray-600">
+                        <div key={idx} className="text-xs text-gray-600 mb-1">
                           {i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})
                           {i.selectedToppings?.length > 0 && ` + ${i.selectedToppings.map(t=>t.name).join(', ')}`}
+                          {i.remark && <div className="text-red-500">* {i.remark}</div>}
                         </div>
                       ))}
                     </div>
@@ -497,14 +538,20 @@ export default function App() {
             {/* ส่วนที่ 2: ระบบจัดการเมนู */}
             {adminTab === 'menus' && (
               <div className="space-y-8">
-                {/* ฟอร์มเพิ่มเมนู */}
-                <div className="bg-gray-50 p-5 rounded-3xl border-2 border-dashed border-gray-200 space-y-4">
-                  <h3 className="font-bold text-sm text-[#A67C52]">เพิ่มเมนูใหม่</h3>
+                {/* ฟอร์มเพิ่ม/แก้ไขเมนู */}
+                <div className={`p-5 rounded-3xl border-2 border-dashed space-y-4 ${editingMenuId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex justify-between items-center">
+                    <h3 className={`font-bold text-sm ${editingMenuId ? 'text-orange-600' : 'text-[#A67C52]'}`}>
+                      {editingMenuId ? '✏️ กำลังแก้ไขเมนู' : 'เพิ่มเมนูใหม่'}
+                    </h3>
+                    {editingMenuId && (
+                      <button onClick={() => { setEditingMenuId(null); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 }); }} className="text-xs text-gray-400 underline">ยกเลิกการแก้ไข</button>
+                    )}
+                  </div>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
                   <div className="flex gap-2">
                     <input type="number" placeholder="ราคา (บาท)" className="w-1/2 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
                     <select className="w-1/2 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
-                      {/* ข้ามการเลือกหมวด 'เมนูขายดี' */}
                       {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
@@ -522,7 +569,9 @@ export default function App() {
                     </label>
                     {newMenu.image && <img src={newMenu.image} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-gray-100" alt="preview" />}
                   </div>
-                  <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md">บันทึกเมนูใหม่</button>
+                  <button onClick={handleSaveMenu} className={`w-full text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md ${editingMenuId ? 'bg-orange-500' : 'bg-[#A67C52]'}`}>
+                    {editingMenuId ? 'บันทึกการแก้ไขเมนู' : 'บันทึกเมนูใหม่'}
+                  </button>
                 </div>
 
                 {/* ฟอร์มเพิ่มท็อปปิ้ง */}
@@ -553,7 +602,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* รายการเมนูที่มีอยู่ */}
+                {/* รายการเมนูที่มีอยู่ (พร้อมปุ่มแก้ไข) */}
                 <div className="space-y-3">
                    <h3 className="font-bold text-sm text-[#3D2C1E]">เมนูทั้งหมด ({menuItems.length} รายการ)</h3>
                    {menuItems.map(item => (
@@ -565,7 +614,10 @@ export default function App() {
                            <p className="text-xs text-gray-400">฿{item.price} • {item.category}</p>
                          </div>
                        </div>
-                       <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>
+                       <div className="flex gap-1">
+                         <button onClick={() => handleEditMenuBtn(item)} className="p-3 text-blue-400 hover:bg-blue-50 rounded-xl transition-all active:scale-95"><Pencil size={18}/></button>
+                         <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>
+                       </div>
                      </div>
                    ))}
                 </div>
@@ -642,7 +694,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- Modal ดูสลิป (เพิ่มใหม่สำหรับแอดมิน) --- */}
+      {/* --- Modal ดูสลิป --- */}
       {viewSlipImage && (
         <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setViewSlipImage(null)}>
           <div className="relative max-w-full max-h-full">
@@ -652,7 +704,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- Modal เลือกตัวเลือกสินค้า --- */}
+      {/* --- Modal เลือกตัวเลือกสินค้า (เพิ่มช่องหมายเหตุ) --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-md p-8 space-y-6 animate-in slide-in-from-bottom-full duration-300 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar">
@@ -704,13 +756,28 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* หมายเหตุ */}
+              <div>
+                <label className="text-sm font-bold block mb-3 text-gray-400">หมายเหตุ (ทางเลือก)</label>
+                <input 
+                  type="text" 
+                  placeholder="เช่น ไม่ใส่น้ำแข็ง, แยกน้ำ" 
+                  className="w-full p-4 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white text-sm outline-none focus:border-[#A67C52] transition-all" 
+                  value={tempOptions.remark} 
+                  onChange={e => setTempOptions({...tempOptions, remark: e.target.value})} 
+                />
+              </div>
+
             </div>
 
             <button onClick={() => {
                 const toppingsPrice = tempOptions.selectedToppings.reduce((sum, t) => sum + Number(t.price), 0);
                 const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
                 const toppingsStr = tempOptions.selectedToppings.map(t=>t.id).sort().join('-');
-                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${toppingsStr}`;
+                
+                // นำหมายเหตุมาต่อท้าย ID เพื่อให้แยกลงตะกร้าได้ถ้าระบุหมายเหตุต่างกัน
+                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${toppingsStr}-${tempOptions.remark}`;
                 
                 setCart(prev => {
                   const ex = prev.find(i => i.cartId === cartId);
@@ -718,7 +785,7 @@ export default function App() {
                   return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, qty: 1 }];
                 });
                 setOptionModalItem(null);
-                setTempOptions({ sweetness: '100%', isBlended: false, selectedToppings: [] });
+                setTempOptions({ sweetness: '100%', isBlended: false, selectedToppings: [], remark: '' });
               }} className="w-full py-5 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 sticky bottom-0 mt-4">
                 <Plus size={20}/> เพิ่มลงตะกร้า • ฿{
                   optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + tempOptions.selectedToppings.reduce((sum, t) => sum + Number(t.price), 0)

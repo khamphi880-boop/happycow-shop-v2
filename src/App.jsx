@@ -42,13 +42,13 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
-  // Store Settings State (พร้อมเพย์ / QR Code)
+  // Store Settings State
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   
   // Menu & Topping Management
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true });
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
 
@@ -97,7 +97,6 @@ export default function App() {
       setToppings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // ดึงการตั้งค่าร้านค้าจาก Firestore
     onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -115,7 +114,6 @@ export default function App() {
     if (window.liff && !window.liff.isLoggedIn()) window.liff.login();
   };
 
-  // --- จัดการเมนูและท็อปปิ้ง (แอดมิน) ---
   const handleSaveMenu = async () => {
     const data = editingMenu || newMenu;
     if (!data.name || !data.price || !data.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
@@ -124,16 +122,24 @@ export default function App() {
     try {
       if (editingMenu) {
         await updateDoc(doc(db, 'menus', editingMenu.id), {
-          ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false
+          ...editingMenu, 
+          price: Number(editingMenu.price), 
+          blendPrice: Number(editingMenu.blendPrice), 
+          allowTopping: editingMenu.allowTopping !== false,
+          allowBlend: editingMenu.allowBlend !== false
         });
         alert('แก้ไขเมนูสำเร็จ! ✨');
         setEditingMenu(null);
       } else {
         await addDoc(collection(db, 'menus'), {
-          ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false
+          ...newMenu, 
+          price: Number(newMenu.price), 
+          blendPrice: Number(newMenu.blendPrice), 
+          allowTopping: newMenu.allowTopping !== false,
+          allowBlend: newMenu.allowBlend !== false
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
-        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true });
+        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
       }
     } catch (e) { alert(e.message); }
   };
@@ -161,7 +167,6 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
-  // --- ฟังก์ชันสั่งซื้อ ---
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) return alert("⚠️ กรุณาล็อกอิน LINE ก่อนครับ");
     if (!address) return alert("กรุณากรอกที่อยู่จัดส่งครับ");
@@ -184,11 +189,12 @@ export default function App() {
         { type: "separator", margin: "md" },
         ...cart.map(i => {
           const toppingText = i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(', ')}` : '';
+          const blendText = i.allowBlend !== false ? (i.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
           return { 
             type: "box", layout: "vertical", margin: "sm", 
             contents: [
               { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-              { type: "text", text: `(${i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
+              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
             ]
           };
         }),
@@ -356,18 +362,21 @@ export default function App() {
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
             <h2 className="text-3xl font-serif font-bold text-[#3D2C1E]">ตะกร้าของคุณ</h2>
             <div className="space-y-4">
-               {cart.map(i => (
-                 <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                   <div className="flex-1 font-bold text-sm">
-                     {i.qty}x {i.name} <br/>
-                     <span className="text-gray-400 text-[10px] uppercase">
-                       ({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
-                       {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
-                     </span>
+               {cart.map(i => {
+                 const blendText = i.allowBlend !== false ? (i.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
+                 return (
+                   <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                     <div className="flex-1 font-bold text-sm">
+                       {i.qty}x {i.name} <br/>
+                       <span className="text-gray-400 text-[10px] uppercase">
+                         ({blendText} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
+                         {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
+                       </span>
+                     </div>
+                     <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
                    </div>
-                   <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
-                 </div>
-               ))}
+                 );
+               })}
                {cart.length === 0 && <div className="py-20 text-center opacity-20 italic font-bold">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
             </div>
 
@@ -393,7 +402,6 @@ export default function App() {
                 {paymentMethod === 'promptpay' && (
                   <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center">
                     <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
-                    {/* ใช้รูป QR Code ที่อัปโหลด หรือ สร้าง QR อัตโนมัติจากเบอร์ที่ตั้งค่าไว้ */}
                     {storeSettings.qrCodeImage ? (
                       <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" alt="QR Code ร้าน" />
                     ) : (
@@ -434,12 +442,15 @@ export default function App() {
                         <div><span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
-                      <div className="space-y-1">{(o.items || []).map((item, idx) => (
-                        <p key={idx} className="text-[11px] font-bold text-gray-400">
-                          {item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})
-                          {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
-                        </p>
-                      ))}</div>
+                      <div className="space-y-1">{(o.items || []).map((item, idx) => {
+                         const blendText = item.allowBlend !== false ? (item.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
+                         return (
+                          <p key={idx} className="text-[11px] font-bold text-gray-400">
+                            {item.qty}x {item.name} ({blendText})
+                            {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
+                          </p>
+                         );
+                      })}</div>
                    </div>
                ))}
              </div>
@@ -452,7 +463,6 @@ export default function App() {
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบแอดมิน</h2>
             
-            {/* --- เพิ่มแถบ "ตั้งค่าร้าน" คืนมา --- */}
             <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
               {['orders', 'menus', 'settings'].map(t => (
                 <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>
@@ -470,12 +480,15 @@ export default function App() {
                         <div className="text-right"><span className="text-orange-600 font-bold block">฿{o.total}</span><span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span></div>
                       </div>
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
-                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => (
-                        <div key={idx} className="text-xs text-gray-600 flex justify-between">
-                          <span>{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
-                          <span className="font-bold">฿{i.price * i.qty}</span>
-                        </div>
-                      ))}</div>
+                      <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => {
+                        const blendText = i.allowBlend !== false ? (i.isBlended?'ปั่น':'เย็น') : 'เย็น/ปกติ';
+                        return (
+                          <div key={idx} className="text-xs text-gray-600 flex justify-between">
+                            <span>{i.qty}x {i.name} ({blendText}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
+                            <span className="font-bold">฿{i.price * i.qty}</span>
+                          </div>
+                        );
+                      })}</div>
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ดูสลิป</button>}
                         <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-400 py-3 rounded-xl flex items-center justify-center active:scale-95 transition-all"><Trash2 size={16}/></button>
@@ -493,31 +506,46 @@ export default function App() {
 
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
-                {/* ฟอร์มเพิ่ม/แก้ไขเมนู */}
+                {/* --- ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน --- */}
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
+                  
                   <div className="flex gap-2">
-                    <input type="number" placeholder="ราคา" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.price : newMenu.price} onChange={e => editingMenu ? setEditingMenu({...editingMenu, price: e.target.value}) : setNewMenu({...newMenu, price: e.target.value})} />
+                    <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.price : newMenu.price} onChange={e => editingMenu ? setEditingMenu({...editingMenu, price: e.target.value}) : setNewMenu({...newMenu, price: e.target.value})} />
                     
                     <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white" value={editingMenu ? editingMenu.category : newMenu.category} onChange={e => editingMenu ? setEditingMenu({...editingMenu, category: e.target.value}) : setNewMenu({...newMenu, category: e.target.value})}>
                       {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div className="flex items-center justify-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-orange-50">
-                      <input type="checkbox" id="freePearl" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
-                      <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> แถมมุกฟรี</label>
-                    </div>
+                  {/* ปุ่มตั้งค่าตัวเลือกของเมนู (มุกฟรี, ท็อปปิ้ง, เมนูปั่น) */}
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer">
+                      <input type="checkbox" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400" />
+                      <span className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> มุกฟรี</span>
+                    </label>
 
-                    <div className="flex items-center justify-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-gray-50">
-                      <input type="checkbox" id="allowTopping" checked={editingMenu ? editingMenu.allowTopping !== false : newMenu.allowTopping !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowTopping: e.target.checked}) : setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-5 h-5 accent-[#A67C52]" />
-                      <label htmlFor="allowTopping" className="text-xs font-bold text-gray-500">ใส่ท็อปปิ้งเสริมได้</label>
-                    </div>
+                    <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={editingMenu ? editingMenu.allowTopping !== false : newMenu.allowTopping !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowTopping: e.target.checked}) : setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-[#A67C52]" />
+                      <span className="text-[10px] font-bold text-gray-500">ท็อปปิ้งได้</span>
+                    </label>
+
+                    <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-blue-50 cursor-pointer">
+                      <input type="checkbox" checked={editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowBlend: e.target.checked}) : setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400" />
+                      <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
+                    </label>
                   </div>
 
-                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all">
+                  {/* กล่องกรอกราคาปั่น (จะโชว์ก็ต่อเมื่อปุ่ม "มีเมนูปั่น" ถูกติ๊กอยู่) */}
+                  {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && (
+                    <div className="mt-2 text-left">
+                      <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
+                      <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:border-blue-400 transition-all bg-white" value={editingMenu ? editingMenu.blendPrice : newMenu.blendPrice} onChange={e => editingMenu ? setEditingMenu({...editingMenu, blendPrice: e.target.value}) : setNewMenu({...newMenu, blendPrice: e.target.value})} />
+                    </div>
+                  )}
+
+                  <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all mt-4">
                     <Upload size={18} className="inline mr-2"/> {(editingMenu ? editingMenu.image : newMenu.image) ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => {
                       const fr = new FileReader(); fr.onload = (ev) => editingMenu ? setEditingMenu({...editingMenu, image: ev.target.result}) : setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
@@ -529,11 +557,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* --- ส่วนสำหรับแอดมินจัดการท็อปปิ้งโดยเฉพาะ --- */}
                 <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 space-y-4 text-center shadow-inner relative mt-8">
                   <h3 className="font-bold text-sm text-orange-600 uppercase tracking-widest">เพิ่มท็อปปิ้งเสริม</h3>
                   <div className="flex gap-2">
-                    <input type="text" placeholder="ชื่อท็อปปิ้ง (เช่น ไข่มุก, วิปครีม)" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
+                    <input type="text" placeholder="ชื่อท็อปปิ้ง (เช่น วิปครีม)" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
                     <input type="number" placeholder="ราคา" className="w-1/3 p-4 rounded-2xl text-sm outline-none shadow-sm" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
                   </div>
                   <button onClick={handleAddTopping} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">บันทึกท็อปปิ้งใหม่</button>
@@ -558,7 +585,10 @@ export default function App() {
                          <div>
                             <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
                             <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
-                            {item.allowTopping === false && <p className="text-[10px] text-red-400 mt-1">❌ ไม่รับท็อปปิ้งเสริม</p>}
+                            <div className="flex gap-1 mt-1">
+                              {item.allowBlend === false && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
+                              {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
+                            </div>
                          </div>
                        </div>
                        <div className="flex gap-2">
@@ -571,7 +601,6 @@ export default function App() {
               </div>
             )}
 
-            {/* --- หน้าตั้งค่าร้านค้า (พร้อมเพย์ / QR) --- */}
             {adminTab === 'settings' && (
               <div className="space-y-8 animate-in fade-in">
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
@@ -629,7 +658,6 @@ export default function App() {
                 ))}</div>
               </div>
 
-              {/* ส่วนที่ 1: มุกฟรี (สำหรับเมนูที่จัดโปร) */}
               {optionModalItem.hasFreePearl && (
                 <div>
                    <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> แถมมุกฟรี!</label>
@@ -640,7 +668,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* ส่วนที่ 2: ท็อปปิ้งเสริม (สำหรับคิดเงินเพิ่ม / ปิดได้ผ่านแอดมิน) */}
               {toppings.length > 0 && optionModalItem.allowTopping !== false && (
                 <div>
                   <label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">เพิ่มท็อปปิ้งอื่นๆ</label>
@@ -670,17 +697,23 @@ export default function App() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
-                 <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">ปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
-              </div>
+              {/* เช็คว่าแอดมินตั้งค่าให้เมนูนี้ "มีปั่น" หรือไม่ */}
+              {optionModalItem.allowBlend !== false ? (
+                <div className="grid grid-cols-2 gap-5">
+                   <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
+                   <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Zap size={32}/><span className="text-xs uppercase">ปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-5">
+                   <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm`}><Coffee size={32}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
+                </div>
+              )}
             </div>
             
             <button onClick={() => {
                 const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
                 const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
                 
-                // จัดรหัสตะกร้าให้ไม่ซ้ำกันหากเลือกท็อปปิ้งต่างกัน
                 const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
                 const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${tempOptions.addPearl}-${toppingsStr}`;
                 

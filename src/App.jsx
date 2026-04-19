@@ -107,7 +107,7 @@ export default function App() {
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   
   // Menu & Topping Management
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false });
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false, isSoldOut: false });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
 
@@ -202,7 +202,8 @@ export default function App() {
           blendPrice: Number(editingMenu.blendPrice), 
           allowTopping: editingMenu.allowTopping !== false,
           allowBlend: editingMenu.allowBlend !== false,
-          isPromoted: editingMenu.isPromoted || false
+          isPromoted: editingMenu.isPromoted || false,
+          isSoldOut: editingMenu.isSoldOut || false
         });
         alert('แก้ไขเมนูสำเร็จ! ✨');
         setEditingMenu(null);
@@ -214,11 +215,12 @@ export default function App() {
           allowTopping: newMenu.allowTopping !== false,
           allowBlend: newMenu.allowBlend !== false,
           isPromoted: newMenu.isPromoted || false,
+          isSoldOut: newMenu.isSoldOut || false,
           createdAt: Date.now(),
           sortOrder: Date.now()
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
-        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false });
+        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false, isSoldOut: false });
       }
     } catch (e) { alert(e.message); }
   };
@@ -578,8 +580,16 @@ export default function App() {
                 <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
                   {promotedItems.map(item => (
                     <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
-                      <div onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); }} className="bg-white rounded-[2rem] p-3 shadow-md cursor-pointer flex items-center gap-4 border border-orange-100 active:scale-95 transition-all h-full">
-                         <img src={item.image} className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0" alt={item.name} />
+                      <div onClick={() => { if(!item.isSoldOut) { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); } }} className={`bg-white rounded-[2rem] p-3 shadow-md flex items-center gap-4 border border-orange-100 transition-all h-full relative overflow-hidden ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
+                         
+                         {/* ป้ายหมดชั่วคราวแบบเก๋ๆ (สไลด์) */}
+                         {item.isSoldOut && (
+                            <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
+                               <div className="bg-[#3D2C1E] text-white px-4 py-1.5 rounded-full font-bold text-xs border border-white/50 shadow-xl rotate-[-5deg] tracking-widest flex items-center gap-1">SOLD OUT</div>
+                            </div>
+                         )}
+
+                         <img src={item.image} className={`w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0 ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
                          <div className="flex-1 flex flex-col justify-center py-1 pr-2">
                             <span className="text-[9px] bg-red-500 text-white px-2 py-1 rounded-full w-fit mb-1.5 font-bold flex items-center gap-1 shadow-sm"><Star size={10} fill="white"/> เมนูแนะนำ</span>
                             <h4 className="font-bold text-sm leading-tight line-clamp-2 text-[#3D2C1E]">{item.name}</h4>
@@ -602,8 +612,16 @@ export default function App() {
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
                   {filteredItems.map((item, index) => (
-                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
-                      {item.hasFreePearl && <div className="absolute top-2 right-2 bg-orange-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10 flex items-center gap-0.5"><Star size={8} fill="white"/> แถมมุกฟรี</div>}
+                    <div key={item.id} onClick={() => { if(!item.isSoldOut) { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); } }} className={`bg-white rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
+                      
+                      {/* ป้ายหมดชั่วคราวแบบเก๋ๆ (เมนูทั่วไป) */}
+                      {item.isSoldOut && (
+                         <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
+                            <div className="bg-[#3D2C1E] text-white px-4 py-1.5 rounded-full font-bold text-[11px] border border-white/50 shadow-xl rotate-[-10deg] tracking-wider">หมดชั่วคราว</div>
+                         </div>
+                      )}
+
+                      {item.hasFreePearl && !item.isSoldOut && <div className="absolute top-2 right-2 bg-orange-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10 flex items-center gap-0.5"><Star size={8} fill="white"/> แถมมุกฟรี</div>}
                       
                       {activeCategory === '🔥 เมนูขายดี' && (
                         <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-sm flex items-center gap-1">
@@ -611,7 +629,7 @@ export default function App() {
                         </div>
                       )}
 
-                      <div className="aspect-square bg-gray-50"><img src={item.image} className="w-full h-full object-cover" alt={item.name} /></div>
+                      <div className="aspect-square bg-gray-50"><img src={item.image} className={`w-full h-full object-cover ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} /></div>
                       <div className="p-4 text-center">
                         <h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4>
                         <p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p>
@@ -883,7 +901,8 @@ export default function App() {
                     </select>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-2 mt-2">
+                  {/* เปลี่ยนเป็น grid 2 คอลัมน์เพื่อให้จัดเรียงปุ่มได้สวยงาม */}
+                  <div className="grid grid-cols-2 gap-2 mt-2">
                     <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer">
                       <input type="checkbox" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400" />
                       <span className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> มุกฟรี</span>
@@ -899,7 +918,12 @@ export default function App() {
                       <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
                     </label>
 
-                    <label className="col-span-3 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
+                    <label className="flex items-center justify-center gap-1 p-3 bg-gray-100 rounded-2xl shadow-sm border border-gray-200 cursor-pointer transition-all hover:bg-gray-200">
+                      <input type="checkbox" checked={editingMenu ? editingMenu.isSoldOut : newMenu.isSoldOut} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isSoldOut: e.target.checked}) : setNewMenu({...newMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-gray-600" />
+                      <span className="text-[10px] font-bold text-gray-600 flex items-center gap-1">ปิดขายชั่วคราว</span>
+                    </label>
+
+                    <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
                       <input type="checkbox" checked={editingMenu ? editingMenu.isPromoted : newMenu.isPromoted} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isPromoted: e.target.checked}) : setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500" />
                       <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์เป็นแบนเนอร์สไลด์หน้าแรก)</span>
                     </label>
@@ -967,13 +991,14 @@ export default function App() {
                                 <button onClick={() => handleMoveMenu(item, 'up', itemsInCategory)} disabled={idx === 0} className={`p-1 rounded-md transition-all ${idx === 0 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowUp size={16}/></button>
                                 <button onClick={() => handleMoveMenu(item, 'down', itemsInCategory)} disabled={idx === itemsInCategory.length - 1} className={`p-1 rounded-md transition-all ${idx === itemsInCategory.length - 1 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowDown size={16}/></button>
                               </div>
-                              <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
+                              <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
                               <div>
                                  <p className="font-bold text-sm text-[#3D2C1E] flex items-center gap-1 flex-wrap">
                                    {item.name} 
                                    {item.isPromoted && <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">แนะนำ</span>}
+                                   {item.isSoldOut && <span className="text-[8px] bg-gray-500 text-white px-1.5 py-0.5 rounded-full">หมด</span>}
                                  </p>
-                                 <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
+                                 <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl && !item.isSoldOut ? '🌟' : ''}</p>
                                  <div className="flex gap-1 mt-1">
                                    {item.allowBlend === false && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
                                    {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download, ArrowUp, ArrowDown } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
@@ -107,7 +107,7 @@ export default function App() {
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   
   // Menu & Topping Management
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
 
@@ -201,7 +201,8 @@ export default function App() {
           price: Number(editingMenu.price), 
           blendPrice: Number(editingMenu.blendPrice), 
           allowTopping: editingMenu.allowTopping !== false,
-          allowBlend: editingMenu.allowBlend !== false
+          allowBlend: editingMenu.allowBlend !== false,
+          isPromoted: editingMenu.isPromoted || false
         });
         alert('แก้ไขเมนูสำเร็จ! ✨');
         setEditingMenu(null);
@@ -212,11 +213,12 @@ export default function App() {
           blendPrice: Number(newMenu.blendPrice), 
           allowTopping: newMenu.allowTopping !== false,
           allowBlend: newMenu.allowBlend !== false,
+          isPromoted: newMenu.isPromoted || false,
           createdAt: Date.now(),
           sortOrder: Date.now()
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
-        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
+        setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isPromoted: false });
       }
     } catch (e) { alert(e.message); }
   };
@@ -507,6 +509,26 @@ export default function App() {
       .sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
   }, [activeCategory, menuItems, bestSellers]);
 
+  const promotedItems = React.useMemo(() => {
+    return menuItems.filter(i => i.isPromoted).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
+  }, [menuItems]);
+
+  const sliderRef = useRef(null);
+  useEffect(() => {
+    if (view !== 'shop' || promotedItems.length <= 1) return;
+    const interval = setInterval(() => {
+      if (sliderRef.current) {
+         const { scrollLeft, scrollWidth, clientWidth } = sliderRef.current;
+         if (scrollLeft + clientWidth >= scrollWidth - 10) {
+           sliderRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+         } else {
+           sliderRef.current.scrollBy({ left: clientWidth, behavior: 'smooth' });
+         }
+      }
+    }, 3500); // สไลด์อัตโนมัติทุกๆ 3.5 วินาที
+    return () => clearInterval(interval);
+  }, [view, promotedItems.length]);
+
   const revData = calculateRevenue();
 
   return (
@@ -549,6 +571,26 @@ export default function App() {
       <main className="flex-1 pb-10">
         {view === 'shop' && (
           <div className="animate-in fade-in">
+            {/* --- แถบสไลด์เมนูแนะนำ --- */}
+            {promotedItems.length > 0 && (
+              <div className="pt-4 pb-2 bg-[#F5EEDC]">
+                <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-4 gap-4">
+                  {promotedItems.map(item => (
+                    <div key={`promo-${item.id}`} className="min-w-full flex-shrink-0 snap-center">
+                      <div onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); }} className="relative bg-white rounded-3xl overflow-hidden shadow-md cursor-pointer h-36 flex border border-orange-100 active:scale-95 transition-all">
+                         <img src={item.image} className="w-2/5 object-cover" alt={item.name} />
+                         <div className="w-3/5 p-4 flex flex-col justify-center bg-gradient-to-br from-orange-50 to-white">
+                            <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full w-fit mb-2 font-bold flex items-center gap-1 shadow-sm"><Star size={10} fill="white"/> เมนูแนะนำใหม่</span>
+                            <h4 className="font-bold text-md leading-tight line-clamp-2 text-[#3D2C1E]">{item.name}</h4>
+                            <p className="text-[#A67C52] font-bold text-lg mt-1">฿{item.price}</p>
+                         </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 sticky top-[73px] z-[40] bg-[#F5EEDC]/95">
               {CATEGORIES.map(c => (
                 <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c && c === '🔥 เมนูขายดี' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : activeCategory === c ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-400 border-gray-100'}`}>{c}</button>
@@ -855,6 +897,11 @@ export default function App() {
                       <input type="checkbox" checked={editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowBlend: e.target.checked}) : setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400" />
                       <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
                     </label>
+
+                    <label className="col-span-3 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
+                      <input type="checkbox" checked={editingMenu ? editingMenu.isPromoted : newMenu.isPromoted} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isPromoted: e.target.checked}) : setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500" />
+                      <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์เป็นแบนเนอร์สไลด์หน้าแรก)</span>
+                    </label>
                   </div>
 
                   {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && (
@@ -921,7 +968,10 @@ export default function App() {
                               </div>
                               <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
                               <div>
-                                 <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
+                                 <p className="font-bold text-sm text-[#3D2C1E] flex items-center gap-1 flex-wrap">
+                                   {item.name} 
+                                   {item.isPromoted && <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">แนะนำ</span>}
+                                 </p>
                                  <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
                                  <div className="flex gap-1 mt-1">
                                    {item.allowBlend === false && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}

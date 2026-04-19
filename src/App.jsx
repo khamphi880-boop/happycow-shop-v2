@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Flame, Pencil } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Flame, Pencil, CheckSquare, Square } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc } from 'firebase/firestore';
 
@@ -17,7 +17,6 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const LIFF_ID = "2009817000-ySEM8T5K"; 
 
-// เพิ่ม '🔥 เมนูขายดี' เป็นหมวดหมู่แรก
 const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
 
@@ -42,16 +41,16 @@ export default function App() {
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // State สำหรับจัดการเมนูและท็อปปิ้ง (รองรับการแก้ไข)
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 });
-  const [editingMenuId, setEditingMenuId] = useState(null); // เช็คว่ากำลังแก้ไขเมนูไหนอยู่
+  // เพิ่ม allowTopping เป็น true/false
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, allowTopping: true });
+  const [editingMenuId, setEditingMenuId] = useState(null); 
   
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
   
   const [viewSlipImage, setViewSlipImage] = useState(null); 
   
   const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [], remark: '' }); // เพิ่ม remark (หมายเหตุ)
+  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [], remark: '' }); 
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
@@ -106,8 +105,8 @@ export default function App() {
 
   const seedSampleData = async () => {
     const samples = [
-      { name: "นมสดฮอกไกโดเย็น", price: 45, category: "นม", image: "https://images.unsplash.com/photo-1550583724-1255818c053b?w=400", blendPrice: 5 },
-      { name: "ชาไทยต้นตำรับ", price: 40, category: "ชา", image: "https://images.unsplash.com/photo-1594631252845-29fc4586d517?w=400", blendPrice: 5 }
+      { name: "นมสดฮอกไกโดเย็น", price: 45, category: "นม", image: "https://images.unsplash.com/photo-1550583724-1255818c053b?w=400", blendPrice: 5, allowTopping: true },
+      { name: "ชาไทยต้นตำรับ", price: 40, category: "ชา", image: "https://images.unsplash.com/photo-1594631252845-29fc4586d517?w=400", blendPrice: 5, allowTopping: true }
     ];
     const sampleToppings = [
       { name: "ไข่มุก", price: 5 },
@@ -120,7 +119,6 @@ export default function App() {
     alert("สร้างเมนูและท็อปปิ้ง (ไข่มุก) แนะนำสำเร็จครับ!");
   };
 
-  // ฟังก์ชันเพิ่ม หรือ แก้ไขเมนู
   const handleSaveMenu = async () => {
     if (!newMenu.name || !newMenu.price || !newMenu.image) {
       return alert('กรุณากรอกข้อมูลให้ครบถ้วนครับ');
@@ -131,28 +129,27 @@ export default function App() {
     
     try {
       if (editingMenuId) {
-        // อัปเดตเมนูเดิม
         await setDoc(doc(db, 'menus', editingMenuId), {
           name: newMenu.name,
           price: Number(newMenu.price),
           category: newMenu.category,
           image: newMenu.image,
-          blendPrice: Number(newMenu.blendPrice)
+          blendPrice: Number(newMenu.blendPrice),
+          allowTopping: newMenu.allowTopping // บันทึกค่า allowTopping
         }, { merge: true });
         alert('แก้ไขเมนูสำเร็จ! 🐮');
       } else {
-        // เพิ่มเมนูใหม่
         await addDoc(collection(db, 'menus'), {
           name: newMenu.name,
           price: Number(newMenu.price),
           category: newMenu.category,
           image: newMenu.image,
-          blendPrice: Number(newMenu.blendPrice)
+          blendPrice: Number(newMenu.blendPrice),
+          allowTopping: newMenu.allowTopping // บันทึกค่า allowTopping
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
       }
-      // เคลียร์ฟอร์ม
-      setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 });
+      setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, allowTopping: true });
       setEditingMenuId(null);
     } catch (e) {
       alert("Error: " + e.message);
@@ -165,11 +162,12 @@ export default function App() {
       price: item.price,
       category: item.category,
       image: item.image,
-      blendPrice: item.blendPrice || 5
+      blendPrice: item.blendPrice || 5,
+      allowTopping: item.allowTopping !== false // ถ้าไม่มีค่า ให้ถือว่า true ไว้ก่อน
     });
     setEditingMenuId(item.id);
     setAdminTab('menus');
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // เลื่อนจอขึ้นไปบนสุดให้เห็นฟอร์ม
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const handleAddTopping = async () => {
@@ -239,7 +237,6 @@ export default function App() {
                 const toppingText = i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(', ')}` : '';
                 const mainItem = { type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] };
                 
-                // ถ้ารายการนี้มีหมายเหตุ ให้เพิ่มกล่องข้อความสีแดงต่อท้ายในบิล LINE
                 if (i.remark) {
                   return [mainItem, { type: "box", layout: "horizontal", margin: "none", contents: [{ type: "text", text: `*หมายเหตุ: ${i.remark}`, size: "xs", color: "#ef4444", flex: 1, wrap: true }] }];
                 }
@@ -279,7 +276,6 @@ export default function App() {
     });
   };
 
-  // --- ระบบคำนวณเมนูขายดีอัตโนมัติ ---
   const bestSellers = useMemo(() => {
     if (orders.length === 0 || menuItems.length === 0) return [];
     
@@ -367,7 +363,6 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-5">
                   {filteredItems.map((item, index) => (
                     <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, selectedToppings: [], remark: ''}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
-                      {/* ป้ายกำกับอันดับขายดี */}
                       {activeCategory === '🔥 เมนูขายดี' && (
                         <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-sm flex items-center gap-1">
                           อันดับ {index + 1}
@@ -417,7 +412,6 @@ export default function App() {
                        ({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})
                        {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
                      </span>
-                     {/* แสดงหมายเหตุในตะกร้า */}
                      {i.remark && <div className="text-[10px] text-red-500 mt-1">* หมายเหตุ: {i.remark}</div>}
                    </div>
                    <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
@@ -545,7 +539,7 @@ export default function App() {
                       {editingMenuId ? '✏️ กำลังแก้ไขเมนู' : 'เพิ่มเมนูใหม่'}
                     </h3>
                     {editingMenuId && (
-                      <button onClick={() => { setEditingMenuId(null); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 }); }} className="text-xs text-gray-400 underline">ยกเลิกการแก้ไข</button>
+                      <button onClick={() => { setEditingMenuId(null); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, allowTopping: true }); }} className="text-xs text-gray-400 underline">ยกเลิกการแก้ไข</button>
                     )}
                   </div>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-[#A67C52]" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
@@ -555,6 +549,16 @@ export default function App() {
                       {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
+
+                  {/* สวิตช์สำหรับกำหนดว่าอนุญาตให้ใส่ท็อปปิ้งได้หรือไม่ */}
+                  <label className="flex items-center gap-2 cursor-pointer pt-2">
+                    <div className="text-[#A67C52]">
+                      {newMenu.allowTopping ? <CheckSquare size={20} /> : <Square size={20} className="text-gray-300" />}
+                    </div>
+                    <span className="text-xs font-bold text-gray-600">อนุญาตให้ลูกค้าเพิ่มท็อปปิ้งในเมนูนี้ได้</span>
+                    <input type="checkbox" className="hidden" checked={newMenu.allowTopping} onChange={e => setNewMenu({...newMenu, allowTopping: e.target.checked})} />
+                  </label>
+
                   <div className="flex items-center gap-3">
                     <label className="flex-1 cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all">
                       <Upload size={16}/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพจากเครื่อง'}
@@ -602,7 +606,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* รายการเมนูที่มีอยู่ (พร้อมปุ่มแก้ไข) */}
+                {/* รายการเมนูที่มีอยู่ */}
                 <div className="space-y-3">
                    <h3 className="font-bold text-sm text-[#3D2C1E]">เมนูทั้งหมด ({menuItems.length} รายการ)</h3>
                    {menuItems.map(item => (
@@ -612,6 +616,7 @@ export default function App() {
                          <div>
                            <p className="font-bold text-sm line-clamp-1">{item.name}</p>
                            <p className="text-xs text-gray-400">฿{item.price} • {item.category}</p>
+                           {!item.allowTopping && <p className="text-[9px] text-red-400">❌ ไม่ใส่ท็อปปิ้ง</p>}
                          </div>
                        </div>
                        <div className="flex gap-1">
@@ -704,7 +709,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- Modal เลือกตัวเลือกสินค้า (เพิ่มช่องหมายเหตุ) --- */}
+      {/* --- Modal เลือกตัวเลือกสินค้า --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-md p-8 space-y-6 animate-in slide-in-from-bottom-full duration-300 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar">
@@ -728,8 +733,8 @@ export default function App() {
                 ))}</div>
               </div>
 
-              {/* เลือกท็อปปิ้ง */}
-              {toppings.length > 0 && (
+              {/* เลือกท็อปปิ้ง (แสดงก็ต่อเมื่อเมนูนี้ allowTopping = true) */}
+              {toppings.length > 0 && optionModalItem.allowTopping !== false && (
                 <div>
                   <label className="text-sm font-bold block mb-3 text-gray-400">เพิ่มท็อปปิ้ง (เลือกได้หลายอย่าง)</label>
                   <div className="space-y-2">
@@ -776,7 +781,6 @@ export default function App() {
                 const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
                 const toppingsStr = tempOptions.selectedToppings.map(t=>t.id).sort().join('-');
                 
-                // นำหมายเหตุมาต่อท้าย ID เพื่อให้แยกลงตะกร้าได้ถ้าระบุหมายเหตุต่างกัน
                 const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${toppingsStr}-${tempOptions.remark}`;
                 
                 setCart(prev => {

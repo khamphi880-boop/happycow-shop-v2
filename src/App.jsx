@@ -50,7 +50,6 @@ const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => 
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // แปลงภาพเป็น JPEG และลด Quality ลงเหลือ 70%
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
     };
@@ -79,7 +78,7 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
-  // Admin Delivery State (จัดการการส่งสินค้า)
+  // Admin Delivery State
   const [deliveryModal, setDeliveryModal] = useState(null);
   const [deliveryImage, setDeliveryImage] = useState('');
   const [deliveryLocation, setDeliveryLocation] = useState('room');
@@ -210,7 +209,7 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
-  // --- ฟังก์ชันยืนยันการส่งสินค้า (แอดมิน) ---
+  // --- ฟังก์ชันยืนยันการส่งสินค้า (เก็บรูปลงฐานข้อมูลแบบถูกบีบอัด) ---
   const handleConfirmDelivery = async () => {
     if (!deliveryImage) return alert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
     setIsDelivering(true);
@@ -220,15 +219,15 @@ export default function App() {
         ? 'ขอบคุณที่สั่งออเดอร์นะคะ 💖' 
         : 'ขออภัยแอดมินไม่สามารถเข้าตึกได้ รบกวนลูกค้าลงมารับเครื่องดื่มที่หน้าตึกนะคะ 🙏';
 
-      // 1. อัปเดตข้อมูลลงฐานข้อมูล
+      // 1. อัปเดตข้อมูลลงฐานข้อมูลโดยเก็บภาพที่ถูกย่อขนาดแล้ว (ประหยัดพื้นที่)
       await updateDoc(doc(db, 'orders', deliveryModal.id), {
         status: 'completed',
-        deliveryImage: deliveryImage,
         deliveryLocation: deliveryLocation,
-        deliveryMessage: deliveryMessage
+        deliveryMessage: deliveryMessage,
+        deliveryImage: deliveryImage // เซฟรูปลง Firestore
       });
 
-      // 2. สร้าง Flex Message ส่งแจ้งเตือนลูกค้า
+      // 2. สร้าง Flex Message แจ้งเตือนลูกค้าว่าส่งของแล้ว ให้เข้ามาดูรูปในเว็บ
       const flexMessage = {
         type: "flex", altText: "อัปเดตสถานะการจัดส่ง",
         contents: {
@@ -264,7 +263,10 @@ export default function App() {
 
       alert('บันทึกการจัดส่งและแจ้งเตือนลูกค้าเรียบร้อย! 🚀');
       setDeliveryModal(null);
-    } catch (e) { alert("Error: " + e.message); }
+    } catch (e) { 
+      console.error(e);
+      alert("เกิดข้อผิดพลาด: " + e.message); 
+    }
     setIsDelivering(false);
   };
 
@@ -561,7 +563,7 @@ export default function App() {
                          );
                       })}</div>
 
-                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ */}
+                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ (เอาปุ่มกลับมาแล้วครับ) */}
                       {o.status === 'completed' && (
                         <div className="mt-4 pt-4 border-t border-gray-100">
                           {o.deliveryMessage && (
@@ -570,6 +572,7 @@ export default function App() {
                               <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
                             </div>
                           )}
+                          {/* ปุ่มให้ลูกค้าดูรูปการจัดส่ง */}
                           {o.deliveryImage && (
                             <button onClick={() => setSelectedSlip(o.deliveryImage)} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all">
                                <Camera size={16}/> ดูรูปถ่ายตอนจัดส่ง
@@ -892,7 +895,7 @@ export default function App() {
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
                      const file = e.target.files[0];
                      if(file){
-                        // บีบอัดรูปถ่ายตอนส่งสินค้าให้เล็กลงก่อนเซฟ
+                        // บีบอัดรูปถ่ายตอนส่งสินค้าให้เล็กลงก่อน
                         const compressedImage = await compressImage(file);
                         setDeliveryImage(compressedImage);
                      }
@@ -902,13 +905,13 @@ export default function App() {
             </div>
 
             <button onClick={handleConfirmDelivery} disabled={isDelivering || !deliveryImage} className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${deliveryImage ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
-               {isDelivering ? 'กำลังบันทึกและส่งข้อความ...' : <><CheckCircle size={18}/> ยืนยันและแจ้งเตือนลูกค้า</>}
+               {isDelivering ? 'กำลังบันทึกและแจ้งเตือน...' : <><CheckCircle size={18}/> ยืนยันและแจ้งเตือนลูกค้า</>}
             </button>
           </div>
         </div>
       )}
 
-      {/* Modal ดูรูปสลิป / รูปตอนจัดส่ง (ดูรูปขนาดใหญ่) */}
+      {/* Modal ดูรูปสลิป (ดูรูปขนาดใหญ่) */}
       {selectedSlip && selectedSlip !== 'cash_payment' && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
           <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip or delivery preview" />

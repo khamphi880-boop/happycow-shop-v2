@@ -522,7 +522,8 @@ export default function App() {
          if (scrollLeft + clientWidth >= scrollWidth - 10) {
            sliderRef.current.scrollTo({ left: 0, behavior: 'smooth' });
          } else {
-           sliderRef.current.scrollBy({ left: clientWidth, behavior: 'smooth' });
+           // ปรับระยะการสไลด์ให้พอดีกับความกว้างการ์ดที่ 85%
+           sliderRef.current.scrollBy({ left: clientWidth * 0.85, behavior: 'smooth' });
          }
       }
     }, 3500); // สไลด์อัตโนมัติทุกๆ 3.5 วินาที
@@ -574,15 +575,15 @@ export default function App() {
             {/* --- แถบสไลด์เมนูแนะนำ --- */}
             {promotedItems.length > 0 && (
               <div className="pt-4 pb-2 bg-[#F5EEDC]">
-                <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-4 gap-4">
+                <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
                   {promotedItems.map(item => (
-                    <div key={`promo-${item.id}`} className="min-w-full flex-shrink-0 snap-center">
-                      <div onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); }} className="relative bg-white rounded-3xl overflow-hidden shadow-md cursor-pointer h-36 flex border border-orange-100 active:scale-95 transition-all">
-                         <img src={item.image} className="w-2/5 object-cover" alt={item.name} />
-                         <div className="w-3/5 p-4 flex flex-col justify-center bg-gradient-to-br from-orange-50 to-white">
-                            <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full w-fit mb-2 font-bold flex items-center gap-1 shadow-sm"><Star size={10} fill="white"/> เมนูแนะนำใหม่</span>
-                            <h4 className="font-bold text-md leading-tight line-clamp-2 text-[#3D2C1E]">{item.name}</h4>
-                            <p className="text-[#A67C52] font-bold text-lg mt-1">฿{item.price}</p>
+                    <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
+                      <div onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl, selectedToppings: []}); }} className="bg-white rounded-[2rem] p-3 shadow-md cursor-pointer flex items-center gap-4 border border-orange-100 active:scale-95 transition-all h-full">
+                         <img src={item.image} className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0" alt={item.name} />
+                         <div className="flex-1 flex flex-col justify-center py-1 pr-2">
+                            <span className="text-[9px] bg-red-500 text-white px-2 py-1 rounded-full w-fit mb-1.5 font-bold flex items-center gap-1 shadow-sm"><Star size={10} fill="white"/> เมนูแนะนำ</span>
+                            <h4 className="font-bold text-sm leading-tight line-clamp-2 text-[#3D2C1E]">{item.name}</h4>
+                            <p className="text-[#A67C52] font-bold text-base mt-1">฿{item.price}</p>
                          </div>
                       </div>
                     </div>

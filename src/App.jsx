@@ -54,7 +54,7 @@ export default function App() {
     localStorage.setItem('happycow_uid', cid);
     setLineProfile(prev => ({ ...prev, userId: cid }));
 
-    // --- จุดที่แก้ไข: บังคับโหลดสคริปต์ LINE SDK ให้ทำงาน 100% ---
+    // --- จุดที่แก้ไข: บังคับโหลดสคริปต์ LINE SDK และล็อกอินอัตโนมัติ ---
     const initializeLiff = () => {
       window.liff.init({ liffId: LIFF_ID }).then(() => {
         if (window.liff.isLoggedIn()) {
@@ -63,6 +63,9 @@ export default function App() {
             pictureUrl: p.pictureUrl,
             userId: p.userId
           }));
+        } else {
+          // หากยังไม่ได้ล็อกอิน ให้เด้งหน้าต่างล็อกอินอัตโนมัติทันที
+          window.liff.login({ redirectUri: window.location.href });
         }
       }).catch(err => console.error("LIFF Error", err));
     };
@@ -250,7 +253,7 @@ export default function App() {
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
              {(lineProfile.userId || '').startsWith('guest_') ? (
-               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1"><LogIn size={10}/> ล็อกอิน LINE</button>
+               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 shadow-sm"><LogIn size={10}/> กำลังล็อกอิน...</button>
              ) : (
                <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
              )}
@@ -279,7 +282,6 @@ export default function App() {
             <div className="p-5">
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
-                  {/* แก้ไขให้ดึง filteredItems (ตัวแปรคำนวณ) มาแสดงแทน */}
                   {filteredItems.map((item, index) => (
                     <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, addPearl: item.hasFreePearl}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
                       {item.hasFreePearl && <div className="absolute top-2 right-2 bg-orange-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10 flex items-center gap-0.5"><Star size={8} fill="white"/> แถมมุกฟรี</div>}

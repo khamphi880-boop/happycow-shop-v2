@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -41,6 +41,12 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
+  
+  // Admin Delivery State (จัดการการส่งสินค้า)
+  const [deliveryModal, setDeliveryModal] = useState(null);
+  const [deliveryImage, setDeliveryImage] = useState('');
+  const [deliveryLocation, setDeliveryLocation] = useState('room');
+  const [isDelivering, setIsDelivering] = useState(false);
   
   // Store Settings State
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
@@ -167,6 +173,65 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
+  // --- ฟังก์ชันยืนยันการส่งสินค้า (แอดมิน) ---
+  const handleConfirmDelivery = async () => {
+    if (!deliveryImage) return alert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
+    setIsDelivering(true);
+    
+    try {
+      const deliveryMessage = deliveryLocation === 'room' 
+        ? 'ขอบคุณที่สั่งออเดอร์นะคะ 💖' 
+        : 'ขออภัยแอดมินไม่สามารถเข้าตึกได้ รบกวนลูกค้าลงมารับเครื่องดื่มที่หน้าตึกนะคะ 🙏';
+
+      // 1. อัปเดตข้อมูลลงฐานข้อมูล
+      await updateDoc(doc(db, 'orders', deliveryModal.id), {
+        status: 'completed',
+        deliveryImage: deliveryImage,
+        deliveryLocation: deliveryLocation,
+        deliveryMessage: deliveryMessage
+      });
+
+      // 2. สร้าง Flex Message ส่งแจ้งเตือนลูกค้า
+      const flexMessage = {
+        type: "flex", altText: "อัปเดตสถานะการจัดส่ง",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: "#4caf50",
+            contents: [{ type: "text", text: "ออร์เดอร์จัดส่งแล้ว!", color: "#ffffff", weight: "bold", align: "center", size: "md" }]
+          },
+          body: {
+            type: "box", layout: "vertical", spacing: "md",
+            contents: [
+              { type: "text", text: `บิล #${deliveryModal.id.slice(0,6)}`, weight: "bold", size: "sm", color: "#A67C52" },
+              { type: "text", text: deliveryMessage, wrap: true, size: "sm", weight: "bold", color: "#333333" },
+              { type: "separator", margin: "md" },
+              {
+                type: "box", layout: "horizontal", margin: "md",
+                contents: [
+                  { type: "text", text: "📍 จุดส่ง:", size: "xs", color: "#888888", flex: 1 },
+                  { type: "text", text: deliveryLocation === 'room' ? 'หน้าห้อง' : 'หน้าตึก', size: "xs", weight: "bold", flex: 3 }
+                ]
+              },
+              { type: "text", text: "📌 ลูกค้าสามารถดูรูปถ่ายการจัดส่งได้ที่เมนู 'ประวัติการสั่งซื้อ' ในระบบร้านนะคะ", wrap: true, size: "xxs", color: "#aaaaaa", margin: "md" }
+            ]
+          }
+        }
+      };
+
+      await fetch('/api/sendLine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: deliveryModal.userId, flexMessage })
+      });
+
+      alert('บันทึกการจัดส่งและแจ้งเตือนลูกค้าเรียบร้อย! 🚀');
+      setDeliveryModal(null);
+    } catch (e) { alert("Error: " + e.message); }
+    setIsDelivering(false);
+  };
+
+  // --- ฟังก์ชันสั่งซื้อ (ลูกค้า) ---
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) return alert("⚠️ กรุณาล็อกอิน LINE ก่อนครับ");
     if (!address) return alert("กรุณากรอกที่อยู่จัดส่งครับ");
@@ -431,6 +496,7 @@ export default function App() {
           </div>
         )}
 
+        {/* --- ฝั่งลูกค้า: ประวัติการสั่งซื้อ --- */}
         {view === 'myOrders' && (
           <div className="p-6 space-y-6 flex-1 animate-in slide-in-from-right-10">
              <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
@@ -442,6 +508,8 @@ export default function App() {
                         <div><span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
+                      
+                      {/* รายการสินค้า */}
                       <div className="space-y-1">{(o.items || []).map((item, idx) => {
                          const blendText = item.allowBlend !== false ? (item.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
                          return (
@@ -451,13 +519,30 @@ export default function App() {
                           </p>
                          );
                       })}</div>
+
+                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ */}
+                      {o.status === 'completed' && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          {o.deliveryMessage && (
+                            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mb-3">
+                              <p className="text-[10px] font-bold text-[#A67C52] mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากแอดมิน:</p>
+                              <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
+                            </div>
+                          )}
+                          {o.deliveryImage && (
+                            <button onClick={() => setSelectedSlip(o.deliveryImage)} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all">
+                               <Camera size={16}/> ดูรูปถ่ายตอนจัดส่ง
+                            </button>
+                          )}
+                        </div>
+                      )}
                    </div>
                ))}
              </div>
           </div>
         )}
 
-        {/* Admin Tab */}
+        {/* --- Admin Tab --- */}
         {view === 'admin' && (
           <div className="p-6 bg-white min-h-screen animate-in fade-in">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
@@ -480,6 +565,7 @@ export default function App() {
                         <div className="text-right"><span className="text-orange-600 font-bold block">฿{o.total}</span><span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span></div>
                       </div>
                       <div className="text-[10px] text-gray-400 mb-3 flex items-center gap-2"><MapPin size={12}/> {o.address}</div>
+                      
                       <div className="space-y-1 border-t pt-3 mb-3">{(o.items || []).map((i, idx) => {
                         const blendText = i.allowBlend !== false ? (i.isBlended?'ปั่น':'เย็น') : 'เย็น/ปกติ';
                         return (
@@ -489,13 +575,22 @@ export default function App() {
                           </div>
                         );
                       })}</div>
+
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ดูสลิป</button>}
                         <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-400 py-3 rounded-xl flex items-center justify-center active:scale-95 transition-all"><Trash2 size={16}/></button>
                       </div>
+
                       <div className="flex gap-2 border-t pt-3 mt-2">
                         {o.status === 'pending' && <button onClick={() => updateOrderStatus(o.id, 'cooking')} className="flex-1 bg-orange-400 text-white py-4 rounded-xl text-[11px] font-bold shadow-lg animate-pulse active:scale-95 transition-all">กดยอมรับออเดอร์</button>}
-                        {o.status === 'cooking' && <button onClick={() => updateOrderStatus(o.id, 'completed')} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-95 transition-all"><Check size={14}/> เสร็จสิ้น (ส่งสินค้า)</button>}
+                        
+                        {/* เปลี่ยนปุ่มส่งสินค้า ให้เปิด Modal แนบรูปแทน */}
+                        {o.status === 'cooking' && (
+                          <button onClick={() => { setDeliveryModal(o); setDeliveryImage(''); setDeliveryLocation('room'); }} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-95 transition-all">
+                             <Check size={14}/> ส่งสินค้าแล้ว
+                          </button>
+                        )}
+                        
                         {o.status === 'completed' && <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จแล้ว</div>}
                       </div>
                     </div>
@@ -506,7 +601,7 @@ export default function App() {
 
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
-                {/* --- ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน --- */}
+                {/* ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน */}
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
@@ -519,7 +614,6 @@ export default function App() {
                     </select>
                   </div>
                   
-                  {/* ปุ่มตั้งค่าตัวเลือกของเมนู (มุกฟรี, ท็อปปิ้ง, เมนูปั่น) */}
                   <div className="grid grid-cols-3 gap-2 mt-2">
                     <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer">
                       <input type="checkbox" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400" />
@@ -537,7 +631,6 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* กล่องกรอกราคาปั่น (จะโชว์ก็ต่อเมื่อปุ่ม "มีเมนูปั่น" ถูกติ๊กอยู่) */}
                   {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && (
                     <div className="mt-2 text-left">
                       <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
@@ -697,7 +790,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* เช็คว่าแอดมินตั้งค่าให้เมนูนี้ "มีปั่น" หรือไม่ */}
               {optionModalItem.allowBlend !== false ? (
                 <div className="grid grid-cols-2 gap-5">
                    <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E] shadow-sm' : 'border-gray-50 text-gray-300'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
@@ -732,10 +824,50 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal ดูสลิป */}
+      {/* Modal จัดการการส่งสินค้า (แอดมิน) */}
+      {deliveryModal && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm">
+          <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 shadow-2xl space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-lg text-[#3D2C1E]">ยืนยันการจัดส่งออร์เดอร์</h3>
+              <button onClick={() => setDeliveryModal(null)} className="text-gray-400 p-2"><X size={20}/></button>
+            </div>
+
+            <div className="space-y-3">
+               <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">จุดส่งสินค้า</label>
+               <div className="grid grid-cols-2 gap-3">
+                 <button onClick={() => setDeliveryLocation('room')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'room' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400'}`}><Home size={24}/><span className="text-[10px]">ส่งหน้าห้อง</span></button>
+                 <button onClick={() => setDeliveryLocation('building')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'building' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400'}`}><Building size={24}/><span className="text-[10px]">ส่งหน้าตึก</span></button>
+               </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center">
+               <p className="text-xs font-bold mb-3">แนบรูปถ่ายเป็นหลักฐาน</p>
+               <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all">
+                  <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกรูป'}
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+                     const file = e.target.files[0];
+                     if(file){
+                        const fr = new FileReader();
+                        fr.onload = ev => setDeliveryImage(ev.target.result);
+                        fr.readAsDataURL(file);
+                     }
+                  }} />
+               </label>
+               {deliveryImage && <img src={deliveryImage} className="mt-4 h-32 w-full object-cover rounded-xl shadow-sm border border-gray-100" alt="Delivery Proof"/>}
+            </div>
+
+            <button onClick={handleConfirmDelivery} disabled={isDelivering || !deliveryImage} className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${deliveryImage ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
+               {isDelivering ? 'กำลังบันทึกและส่งข้อความ...' : <><CheckCircle size={18}/> ยืนยันและแจ้งเตือนลูกค้า</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ดูรูปสลิป / รูปตอนจัดส่ง (ดูรูปขนาดใหญ่) */}
       {selectedSlip && selectedSlip !== 'cash_payment' && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip big" />
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip or delivery preview" />
         </div>
       )}
 

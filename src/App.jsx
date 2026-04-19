@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download, ArrowUp, ArrowDown } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -212,7 +212,8 @@ export default function App() {
           blendPrice: Number(newMenu.blendPrice), 
           allowTopping: newMenu.allowTopping !== false,
           allowBlend: newMenu.allowBlend !== false,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          sortOrder: Date.now()
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
         setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
@@ -222,6 +223,34 @@ export default function App() {
 
   const handleDeleteMenu = async (id) => {
     if(window.confirm('ลบเมนูนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'menus', id));
+  };
+
+  // --- ฟังก์ชันจัดเรียงลำดับเมนู (แอดมิน) ---
+  const handleMoveMenu = async (item, direction, itemsInCategory) => {
+    const currentIndex = itemsInCategory.findIndex(i => i.id === item.id);
+    
+    if (direction === 'up' && currentIndex > 0) {
+      const prevItem = itemsInCategory[currentIndex - 1];
+      
+      const currentOrder = item.sortOrder || item.createdAt || Date.now();
+      let prevOrder = prevItem.sortOrder || prevItem.createdAt || (Date.now() - 1000);
+      
+      if (currentOrder === prevOrder) prevOrder -= 1; // กันค่าซ้ำ
+
+      await updateDoc(doc(db, 'menus', item.id), { sortOrder: prevOrder });
+      await updateDoc(doc(db, 'menus', prevItem.id), { sortOrder: currentOrder });
+      
+    } else if (direction === 'down' && currentIndex < itemsInCategory.length - 1) {
+      const nextItem = itemsInCategory[currentIndex + 1];
+      
+      const currentOrder = item.sortOrder || item.createdAt || Date.now();
+      let nextOrder = nextItem.sortOrder || nextItem.createdAt || (Date.now() + 1000);
+
+      if (currentOrder === nextOrder) nextOrder += 1;
+
+      await updateDoc(doc(db, 'menus', item.id), { sortOrder: nextOrder });
+      await updateDoc(doc(db, 'menus', nextItem.id), { sortOrder: currentOrder });
+    }
   };
 
   const handleAddTopping = async () => {
@@ -473,7 +502,9 @@ export default function App() {
 
   const filteredItems = React.useMemo(() => {
     if (activeCategory === '🔥 เมนูขายดี') return bestSellers;
-    return menuItems.filter(i => i.category === activeCategory);
+    return menuItems
+      .filter(i => i.category === activeCategory)
+      .sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
   }, [activeCategory, menuItems, bestSellers]);
 
   const revData = calculateRevenue();
@@ -873,16 +904,21 @@ export default function App() {
                   {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(category => {
                     const itemsInCategory = menuItems
                       .filter(item => item.category === category)
-                      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                      .sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
 
                     if (itemsInCategory.length === 0) return null;
 
                     return (
                       <div key={category} className="space-y-3">
                         <h4 className="font-bold text-lg text-[#3D2C1E] border-b-2 border-[#A67C52]/20 pb-2 ml-1">{category}</h4>
-                        {itemsInCategory.map(item => (
+                        {itemsInCategory.map((item, idx) => (
                           <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
+                              {/* ปุ่มเลื่อนลำดับขึ้น-ลง */}
+                              <div className="flex flex-col gap-1">
+                                <button onClick={() => handleMoveMenu(item, 'up', itemsInCategory)} disabled={idx === 0} className={`p-1 rounded-md transition-all ${idx === 0 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowUp size={16}/></button>
+                                <button onClick={() => handleMoveMenu(item, 'down', itemsInCategory)} disabled={idx === itemsInCategory.length - 1} className={`p-1 rounded-md transition-all ${idx === itemsInCategory.length - 1 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowDown size={16}/></button>
+                              </div>
                               <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
                               <div>
                                  <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>

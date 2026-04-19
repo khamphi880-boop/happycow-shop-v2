@@ -178,7 +178,8 @@ export default function App() {
           price: Number(newMenu.price), 
           blendPrice: Number(newMenu.blendPrice), 
           allowTopping: newMenu.allowTopping !== false,
-          allowBlend: newMenu.allowBlend !== false
+          allowBlend: newMenu.allowBlend !== false,
+          createdAt: Date.now()
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
         setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true });
@@ -809,26 +810,39 @@ export default function App() {
                   )}
                 </div>
                 
-                <div className="space-y-3">
-                   {menuItems.map(item => (
-                     <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
-                       <div className="flex items-center gap-4">
-                         <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
-                         <div>
-                            <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
-                            <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
-                            <div className="flex gap-1 mt-1">
-                              {item.allowBlend === false && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
-                              {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
+                <div className="space-y-8">
+                  {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(category => {
+                    const itemsInCategory = menuItems
+                      .filter(item => item.category === category)
+                      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+                    if (itemsInCategory.length === 0) return null;
+
+                    return (
+                      <div key={category} className="space-y-3">
+                        <h4 className="font-bold text-lg text-[#3D2C1E] border-b-2 border-[#A67C52]/20 pb-2 ml-1">{category}</h4>
+                        {itemsInCategory.map(item => (
+                          <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                            <div className="flex items-center gap-4">
+                              <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" alt="list" />
+                              <div>
+                                 <p className="font-bold text-sm text-[#3D2C1E]">{item.name}</p>
+                                 <p className="text-xs text-[#A67C52] font-bold">฿{item.price} {item.hasFreePearl ? '🌟' : ''}</p>
+                                 <div className="flex gap-1 mt-1">
+                                   {item.allowBlend === false && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
+                                   {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
+                                 </div>
+                              </div>
                             </div>
-                         </div>
-                       </div>
-                       <div className="flex gap-2">
-                         <button onClick={() => setEditingMenu(item)} className="p-3 text-blue-400 active:scale-90 transition-all"><Edit size={18}/></button>
-                         <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 active:scale-90 transition-all"><Trash2 size={18}/></button>
-                       </div>
-                     </div>
-                   ))}
+                            <div className="flex gap-2">
+                              <button onClick={() => setEditingMenu(item)} className="p-3 text-blue-400 active:scale-90 transition-all"><Edit size={18}/></button>
+                              <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 active:scale-90 transition-all"><Trash2 size={18}/></button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

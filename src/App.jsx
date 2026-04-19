@@ -24,6 +24,7 @@ const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [toppings, setToppings] = useState([]); // เพิ่ม State สำหรับเก็บท็อปปิ้ง
   const [cart, setCart] = useState([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
   const [view, setView] = useState('shop'); 
@@ -43,9 +44,12 @@ export default function App() {
 
   // แก้ไขตอนเพิ่มเมนู ให้ category เริ่มต้นที่ 'นม' (ไม่ใช่เมนูขายดี)
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5 });
+  const [newTopping, setNewTopping] = useState({ name: '', price: '' }); // เพิ่ม State สำหรับสร้างท็อปปิ้งใหม่
+  
+  const [viewSlipImage, setViewSlipImage] = useState(null); // State สำหรับเปิดดูรูปสลิป
   
   const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false });
+  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, selectedToppings: [] }); // เพิ่ม selectedToppings
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
@@ -74,6 +78,10 @@ export default function App() {
       setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp));
     });
 
+    const unsubToppings = onSnapshot(collection(db, 'toppings'), snapshot => {
+      setToppings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
     const unsubSettings = onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         setStoreSettings(docSnap.data());
@@ -85,7 +93,7 @@ export default function App() {
       }
     });
 
-    return () => { unsubMenu(); unsubOrders(); unsubSettings(); };
+    return () => { unsubMenu(); unsubOrders(); unsubToppings(); unsubSettings(); };
   }, []);
 
   const handleLineLogin = () => {
@@ -126,10 +134,36 @@ export default function App() {
     }
   };
 
+  const handleAddTopping = async () => {
+    if (!newTopping.name || !newTopping.price) {
+      return alert('กรุณากรอกข้อมูลท็อปปิ้งให้ครบถ้วนครับ');
+    }
+    try {
+      await addDoc(collection(db, 'toppings'), {
+        name: newTopping.name,
+        price: Number(newTopping.price)
+      });
+      alert('เพิ่มท็อปปิ้งสำเร็จ! 🐮');
+      setNewTopping({ name: '', price: '' });
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+  };
+
   const handleDeleteMenu = async (id) => {
     if(window.confirm('ต้องการลบเมนูนี้ใช่หรือไม่?')) {
       try {
         await deleteDoc(doc(db, 'menus', id));
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+  };
+
+  const handleDeleteTopping = async (id) => {
+    if(window.confirm('ต้องการลบท็อปปิ้งนี้ใช่หรือไม่?')) {
+      try {
+        await deleteDoc(doc(db, 'toppings', id));
       } catch (e) {
         alert("Error: " + e.message);
       }
@@ -163,7 +197,10 @@ export default function App() {
             contents: [
               { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName || 'ลูกค้า'}`, weight: "bold", size: "sm" },
               { type: "separator", margin: "md" },
-              ...cart.map(i => ({ type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] })),
+              ...cart.map(i => {
+                const toppingText = i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(', ')}` : '';
+                return { type: "box", layout: "horizontal", margin: "sm", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3 }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] };
+              }),
               { type: "separator", margin: "md" },
               { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52" }] }
             ]
@@ -292,7 +329,7 @@ export default function App() {
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
                   {filteredItems.map((item, index) => (
-                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
+                    <div key={item.id} onClick={() => { setOptionModalItem(item); setTempOptions({sweetness: '100%', isBlended: false, selectedToppings: []}); }} className="bg-white rounded-[2rem] overflow-hidden shadow-sm active:scale-95 transition-all cursor-pointer relative">
                       {/* ป้ายกำกับอันดับขายดี (เฉพาะหมวดขายดี) */}
                       {activeCategory === '🔥 เมนูขายดี' && (
                         <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-sm flex items-center gap-1">
@@ -338,7 +375,13 @@ export default function App() {
             <div className="space-y-4">
                {cart.map(i => (
                  <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                   <div className="flex-1 font-bold text-sm">{i.qty}x {i.name} <br/><span className="text-gray-400 text-[10px] font-normal uppercase">({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})</span></div>
+                   <div className="flex-1 font-bold text-sm">
+                     {i.qty}x {i.name} <br/>
+                     <span className="text-gray-400 text-[10px] font-normal uppercase">
+                       ({i.isBlended ? 'ปั่น' : 'เย็น'} • หวาน {i.sweetness})
+                       {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
+                     </span>
+                   </div>
                    <div className="flex items-center gap-4"><p className="font-bold text-[#A67C52]">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300"><Trash2 size={16}/></button></div>
                  </div>
                ))}
@@ -399,7 +442,12 @@ export default function App() {
                         <div><span className="text-[10px] font-bold text-[#A67C52] uppercase">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
                         <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
                       </div>
-                      <div className="space-y-1">{(o.items || []).map((item, idx) => (<p key={idx} className="text-[11px] font-bold text-gray-400">{item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})</p>))}</div>
+                      <div className="space-y-1">{(o.items || []).map((item, idx) => (
+                        <p key={idx} className="text-[11px] font-bold text-gray-400">
+                          {item.qty}x {item.name} ({item.isBlended ? 'ปั่น' : 'เย็น'})
+                          {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
+                        </p>
+                      ))}</div>
                    </div>
                  ))
                ) : (
@@ -430,10 +478,15 @@ export default function App() {
                     <div className="flex justify-between mb-2"><span className="font-bold text-sm">ลูกค้า: {o.lineName || 'ลูกค้า'}</span><span className="text-orange-600 font-bold">฿{o.total}</span></div>
                     <div className="text-xs text-gray-500 mb-2">ที่อยู่: {o.address}</div>
                     <div className="space-y-1 border-t border-gray-50 pt-2 mb-2">
-                      {(o.items || []).map((i, idx) => <div key={idx} className="text-xs text-gray-600">{i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})</div>)}
+                      {(o.items || []).map((i, idx) => (
+                        <div key={idx} className="text-xs text-gray-600">
+                          {i.qty}x {i.name} ({i.isBlended?'ปั่น':'เย็น'})
+                          {i.selectedToppings?.length > 0 && ` + ${i.selectedToppings.map(t=>t.name).join(', ')}`}
+                        </div>
+                      ))}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => window.open(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>
+                      <button onClick={() => setViewSlipImage(o.slipImage)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold mb-2">ดูสลิปโอนเงิน</button>
                       <button onClick={async () => await deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-500 px-4 rounded-xl text-xs font-bold"><Trash2 size={16}/></button>
                     </div>
                   </div>
@@ -471,6 +524,34 @@ export default function App() {
                   </div>
                   <button onClick={handleAddMenu} className="w-full bg-[#A67C52] text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md">บันทึกเมนูใหม่</button>
                 </div>
+
+                {/* ฟอร์มเพิ่มท็อปปิ้ง */}
+                <div className="bg-orange-50 p-5 rounded-3xl border-2 border-dashed border-orange-200 space-y-4">
+                  <h3 className="font-bold text-sm text-orange-600">เพิ่มท็อปปิ้งใหม่</h3>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="ชื่อท็อปปิ้ง (เช่น ไข่มุก)" className="w-2/3 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-orange-400" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
+                    <input type="number" placeholder="ราคา" className="w-1/3 p-3 rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-orange-400" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
+                  </div>
+                  <button onClick={handleAddTopping} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold text-sm active:scale-95 transition-all shadow-md">บันทึกท็อปปิ้งใหม่</button>
+                </div>
+
+                {/* รายการท็อปปิ้งที่มีอยู่ */}
+                {toppings.length > 0 && (
+                  <div className="space-y-3">
+                     <h3 className="font-bold text-sm text-[#3D2C1E]">ท็อปปิ้งทั้งหมด ({toppings.length} รายการ)</h3>
+                     {toppings.map(item => (
+                       <div key={item.id} className="flex justify-between items-center bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+                         <div className="flex items-center gap-3">
+                           <div>
+                             <p className="font-bold text-sm line-clamp-1">{item.name}</p>
+                             <p className="text-xs text-gray-400">+฿{item.price}</p>
+                           </div>
+                         </div>
+                         <button onClick={() => handleDeleteTopping(item.id)} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>
+                       </div>
+                     ))}
+                  </div>
+                )}
 
                 {/* รายการเมนูที่มีอยู่ */}
                 <div className="space-y-3">
@@ -561,36 +642,88 @@ export default function App() {
         </div>
       )}
 
+      {/* --- Modal ดูสลิป (เพิ่มใหม่สำหรับแอดมิน) --- */}
+      {viewSlipImage && (
+        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setViewSlipImage(null)}>
+          <div className="relative max-w-full max-h-full">
+            <button onClick={() => setViewSlipImage(null)} className="absolute -top-12 right-0 p-2 text-white bg-white/20 rounded-full hover:bg-white/40"><X size={24}/></button>
+            <img src={viewSlipImage} alt="Slip" className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl" onClick={e => e.stopPropagation()} />
+          </div>
+        </div>
+      )}
+
       {/* --- Modal เลือกตัวเลือกสินค้า --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-md p-8 space-y-8 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
-            <div className="flex justify-between items-center">
+          <div className="bg-white rounded-[3rem] w-full max-w-md p-8 space-y-6 animate-in slide-in-from-bottom-full duration-300 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar">
+            <div className="flex justify-between items-center sticky top-0 bg-white z-10 pb-2">
               <h3 className="text-2xl font-serif font-bold">{optionModalItem.name}</h3>
               <button onClick={() => setOptionModalItem(null)} className="p-3 bg-gray-50 rounded-2xl text-gray-400"><X/></button>
             </div>
+            
             <div className="space-y-6">
-              <div>
-                <label className="text-sm font-bold block mb-4 text-gray-400">ระดับความหวาน</label>
-                <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
-                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E]' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
-                ))}</div>
-              </div>
+              {/* เลือกเย็น/ปั่น */}
               <div className="grid grid-cols-2 gap-4">
                  <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-6 rounded-3xl border-2 font-bold flex flex-col items-center gap-3 transition-all ${!tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Coffee size={28}/><span className="text-xs">เมนูเย็น</span></button>
                  <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-6 rounded-3xl border-2 font-bold flex flex-col items-center gap-3 transition-all ${tempOptions.isBlended ? 'border-[#A67C52] bg-[#F5EEDC]/40 text-[#3D2C1E]' : 'border-gray-50 text-gray-300'}`}><Zap size={28}/><span className="text-xs">เมนูปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
               </div>
+
+              {/* ระดับความหวาน */}
+              <div>
+                <label className="text-sm font-bold block mb-3 text-gray-400">ระดับความหวาน</label>
+                <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
+                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-[#3D2C1E] text-white border-[#3D2C1E]' : 'bg-white text-gray-300 border-gray-100'}`}>{l}</button>
+                ))}</div>
+              </div>
+
+              {/* เลือกท็อปปิ้ง */}
+              {toppings.length > 0 && (
+                <div>
+                  <label className="text-sm font-bold block mb-3 text-gray-400">เพิ่มท็อปปิ้ง (เลือกได้หลายอย่าง)</label>
+                  <div className="space-y-2">
+                    {toppings.map(t => {
+                      const isSelected = tempOptions.selectedToppings.find(st => st.id === t.id);
+                      return (
+                        <label key={t.id} className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-[#A67C52] bg-[#F5EEDC]/20' : 'border-gray-50 bg-gray-50'}`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isSelected ? 'bg-[#A67C52] text-white' : 'bg-white border-2 border-gray-200'}`}>
+                              {isSelected && <CheckCircle size={14} />}
+                            </div>
+                            <span className={`text-sm font-bold ${isSelected ? 'text-[#3D2C1E]' : 'text-gray-500'}`}>{t.name}</span>
+                          </div>
+                          <span className="text-sm font-bold text-[#A67C52]">+฿{t.price}</span>
+                          <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => {
+                            setTempOptions(prev => {
+                              if (isSelected) return { ...prev, selectedToppings: prev.selectedToppings.filter(st => st.id !== t.id) };
+                              return { ...prev, selectedToppings: [...prev.selectedToppings, t] };
+                            });
+                          }} />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+
             <button onClick={() => {
-                const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0);
-                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}`;
+                const toppingsPrice = tempOptions.selectedToppings.reduce((sum, t) => sum + Number(t.price), 0);
+                const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
+                const toppingsStr = tempOptions.selectedToppings.map(t=>t.id).sort().join('-');
+                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${toppingsStr}`;
+                
                 setCart(prev => {
                   const ex = prev.find(i => i.cartId === cartId);
                   if (ex) return prev.map(i => i.cartId === cartId ? { ...i, qty: i.qty + 1 } : i);
                   return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, qty: 1 }];
                 });
                 setOptionModalItem(null);
-              }} className="w-full py-5 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"><Plus size={20}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0)}</button>
+                setTempOptions({ sweetness: '100%', isBlended: false, selectedToppings: [] });
+              }} className="w-full py-5 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 sticky bottom-0 mt-4">
+                <Plus size={20}/> เพิ่มลงตะกร้า • ฿{
+                  optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + tempOptions.selectedToppings.reduce((sum, t) => sum + Number(t.price), 0)
+                }
+            </button>
           </div>
         </div>
       )}

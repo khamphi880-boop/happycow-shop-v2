@@ -93,7 +93,7 @@ export default function App() {
   const [isDelivering, setIsDelivering] = useState(false);
   
   // Store Settings State
-  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
+  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   
@@ -157,10 +157,11 @@ export default function App() {
     onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStoreSettings(data);
+        setStoreSettings({ ...data, isStoreOpen: data.isStoreOpen !== false });
         setEditPromptPay(data.promptPayNo || '0812345678');
         setEditQrCodeImage(data.qrCodeImage || '');
       } else {
+        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true });
         setEditPromptPay('0812345678');
         setEditQrCodeImage('');
       }
@@ -343,6 +344,14 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  // --- ฟังก์ชันเปิด-ปิดร้าน (แอดมิน) ---
+  const updateStoreStatus = async (status) => {
+    try {
+      await setDoc(doc(db, 'settings', 'store'), { isStoreOpen: status }, { merge: true });
+      alert(`เปลี่ยนสถานะเป็น "${status ? 'เปิดร้าน' : 'ปิดร้าน'}" เรียบร้อย! 🐮`);
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
   // --- ฟังก์ชันสั่งซื้อ (ลูกค้า) ---
   const handleOrder = async () => {
     if ((lineProfile.userId || '').startsWith('guest_')) return alert("⚠️ กรุณาล็อกอิน LINE ก่อนครับ");
@@ -466,11 +475,16 @@ export default function App() {
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
-             {(lineProfile.userId || '').startsWith('guest_') ? (
-               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 shadow-sm"><LogIn size={10}/> กำลังล็อกอิน...</button>
-             ) : (
-               <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
-             )}
+             <div className="flex items-center gap-1 mt-1">
+               <span className={`text-[8px] px-2 py-0.5 rounded-full font-bold text-white shadow-sm flex items-center gap-1 ${storeSettings.isStoreOpen !== false ? 'bg-green-500' : 'bg-red-500'}`}>
+                 {storeSettings.isStoreOpen !== false ? '🟢 เปิดแล้วค่ะ' : '🔴 ปิดแล้วค่ะ'}
+               </span>
+               {(lineProfile.userId || '').startsWith('guest_') ? (
+                 <button onClick={handleLineLogin} className="text-[9px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-sm"><LogIn size={10}/> ล็อกอิน</button>
+               ) : (
+                 <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || '').slice(0, 10)}</p>
+               )}
+             </div>
            </div>
         </div>
         <div className="flex gap-2">
@@ -608,7 +622,12 @@ export default function App() {
                     {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white" alt="Slip" />}
                   </div>
                 )}
-                <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
+                
+                {storeSettings.isStoreOpen !== false ? (
+                  <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
+                ) : (
+                  <button disabled className="w-full py-5 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg shadow-xl cursor-not-allowed">ร้านปิดรับออเดอร์ชั่วคราว</button>
+                )}
               </div>
             )}
           </div>
@@ -865,6 +884,16 @@ export default function App() {
             {/* TAB: ตั้งค่า */}
             {adminTab === 'settings' && (
               <div className="space-y-8 animate-in fade-in">
+                
+                {/* --- ส่วนเปิดปิดร้าน --- */}
+                <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 space-y-4 shadow-inner relative">
+                  <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest text-center">สถานะการเปิด-ปิดร้าน</h3>
+                  <div className="flex justify-center gap-3 pt-2">
+                    <button onClick={() => updateStoreStatus(true)} className={`flex-1 py-4 rounded-2xl font-bold flex justify-center items-center gap-2 shadow-sm transition-all ${storeSettings.isStoreOpen !== false ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}><CheckCircle size={18}/> เปิดร้านแล้ว</button>
+                    <button onClick={() => updateStoreStatus(false)} className={`flex-1 py-4 rounded-2xl font-bold flex justify-center items-center gap-2 shadow-sm transition-all ${storeSettings.isStoreOpen === false ? 'bg-red-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}><X size={18}/> ปิดร้านแล้ว</button>
+                  </div>
+                </div>
+
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest text-center">ตั้งค่าช่องทางชำระเงิน</h3>
                   
@@ -970,24 +999,30 @@ export default function App() {
               )}
             </div>
             
-            <button onClick={() => {
-                const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
-                const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
-                
-                const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
-                const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${tempOptions.addPearl}-${toppingsStr}`;
-                
-                setCart(prev => {
-                  const ex = prev.find(i => i.cartId === cartId);
-                  if (ex) return prev.map(i => i.cartId === cartId ? { ...i, qty: i.qty + 1 } : i);
-                  return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, qty: 1 }];
-                });
-                setOptionModalItem(null);
-              }} className="w-full py-6 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-2xl transition-all sticky bottom-0">
-                <Plus size={24}/> เพิ่มลงตะกร้า • ฿{
-                  optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0)
-                }
-            </button>
+            {storeSettings.isStoreOpen !== false ? (
+              <button onClick={() => {
+                  const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
+                  const finalP = optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
+                  
+                  const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
+                  const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${tempOptions.isBlended}-${tempOptions.addPearl}-${toppingsStr}`;
+                  
+                  setCart(prev => {
+                    const ex = prev.find(i => i.cartId === cartId);
+                    if (ex) return prev.map(i => i.cartId === cartId ? { ...i, qty: i.qty + 1 } : i);
+                    return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, qty: 1 }];
+                  });
+                  setOptionModalItem(null);
+                }} className="w-full py-6 bg-[#3D2C1E] text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-2xl transition-all sticky bottom-0">
+                  <Plus size={24}/> เพิ่มลงตะกร้า • ฿{
+                    optionModalItem.price + (tempOptions.isBlended ? (optionModalItem.blendPrice || 5) : 0) + (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0)
+                  }
+              </button>
+            ) : (
+              <button disabled className="w-full py-6 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg flex items-center justify-center gap-3 shadow-2xl sticky bottom-0 cursor-not-allowed">
+                  ร้านปิดรับออเดอร์ชั่วคราว
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -41,7 +41,6 @@ export default function App() {
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
 
-  // เพิ่ม allowTopping เป็น true/false
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, allowTopping: true });
   const [editingMenuId, setEditingMenuId] = useState(null); 
   
@@ -54,35 +53,48 @@ export default function App() {
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   useEffect(() => {
+    // กำหนด Guest ID
     let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);
     localStorage.setItem('happycow_uid', cid);
     setLineProfile(prev => ({ ...prev, userId: cid }));
 
-    if (window.liff) {
-      window.liff.init({ liffId: LIFF_ID }).then(() => {
-        if (window.liff.isLoggedIn()) {
-          window.liff.getProfile().then(p => setLineProfile({
-            displayName: p.displayName,
-            pictureUrl: p.pictureUrl,
-            userId: p.userId
-          }));
-        }
-      }).catch(err => console.error("LIFF Error", err));
-    }
+    // โหลดระบบ LINE อย่างปลอดภัย (รันวนจนกว่าระบบ LINE จะตื่น)
+    const loadLiff = () => {
+      if (window.liff) {
+        window.liff.init({ liffId: LIFF_ID }).then(() => {
+          if (window.liff.isLoggedIn()) {
+            window.liff.getProfile().then(p => {
+              setLineProfile({
+                displayName: p.displayName,
+                pictureUrl: p.pictureUrl,
+                userId: p.userId
+              });
+            });
+          }
+        }).catch(err => {
+          console.error("LIFF Init Error:", err);
+          if (err.code === 'LIFF_INIT_ERROR') {
+            alert(`ข้อผิดพลาดระบบ: ตั้งค่า LIFF ID ไม่ถูกต้อง หรือเบราว์เซอร์บล็อกคุกกี้ (${err.message})`);
+          }
+        });
+      } else {
+        // ถ้าระบบยังไม่พร้อม ให้รอสักครู่แล้วเรียกใหม่
+        setTimeout(loadLiff, 500); 
+      }
+    };
+    loadLiff();
 
+    // ดึงข้อมูลฐานข้อมูล
     const unsubMenu = onSnapshot(collection(db, 'menus'), snapshot => {
       setMenuItems(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
       setIsLoading(false);
     });
-
     const unsubOrders = onSnapshot(collection(db, 'orders'), snapshot => {
       setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp));
     });
-
     const unsubToppings = onSnapshot(collection(db, 'toppings'), snapshot => {
       setToppings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-
     const unsubSettings = onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         setStoreSettings(docSnap.data());
@@ -97,9 +109,17 @@ export default function App() {
     return () => { unsubMenu(); unsubOrders(); unsubToppings(); unsubSettings(); };
   }, []);
 
+  // ฟังก์ชันกดยืนยันการล็อกอิน
   const handleLineLogin = () => {
-    if (window.liff && !window.liff.isLoggedIn()) {
-      window.liff.login();
+    try {
+      if (!window.liff) {
+        return alert("ระบบของ LINE กำลังโหลด โปรดรอสัก 2-3 วินาทีแล้วลองกดใหม่ครับ 🐮");
+      }
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login({ redirectUri: window.location.href });
+      }
+    } catch (e) {
+      alert("เกิดข้อผิดพลาดในการเปิดหน้าล็อกอิน LINE: " + e.message);
     }
   };
 
@@ -135,7 +155,7 @@ export default function App() {
           category: newMenu.category,
           image: newMenu.image,
           blendPrice: Number(newMenu.blendPrice),
-          allowTopping: newMenu.allowTopping // บันทึกค่า allowTopping
+          allowTopping: newMenu.allowTopping 
         }, { merge: true });
         alert('แก้ไขเมนูสำเร็จ! 🐮');
       } else {
@@ -145,7 +165,7 @@ export default function App() {
           category: newMenu.category,
           image: newMenu.image,
           blendPrice: Number(newMenu.blendPrice),
-          allowTopping: newMenu.allowTopping // บันทึกค่า allowTopping
+          allowTopping: newMenu.allowTopping 
         });
         alert('เพิ่มเมนูสำเร็จ! 🐮');
       }
@@ -163,7 +183,7 @@ export default function App() {
       category: item.category,
       image: item.image,
       blendPrice: item.blendPrice || 5,
-      allowTopping: item.allowTopping !== false // ถ้าไม่มีค่า ให้ถือว่า true ไว้ก่อน
+      allowTopping: item.allowTopping !== false 
     });
     setEditingMenuId(item.id);
     setAdminTab('menus');
@@ -322,7 +342,7 @@ export default function App() {
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight">วัวนมอารมณ์ดี</h1>
              {(lineProfile.userId || '').startsWith('guest_') ? (
-               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 active:scale-95"><LogIn size={10}/> ล็อกอิน LINE เพื่อรับบิล</button>
+               <button onClick={handleLineLogin} className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 mt-1 active:scale-95 shadow-sm"><LogIn size={10}/> ล็อกอิน LINE เพื่อรับบิล</button>
              ) : (
                <p className="text-[9px] font-bold text-green-700 uppercase">คุณ {(lineProfile.displayName || '').slice(0, 15)}</p>
              )}

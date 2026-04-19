@@ -24,7 +24,7 @@ export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
-  const [toppings, setToppings] = useState([]); // เพิ่ม State สำหรับท็อปปิ้ง
+  const [toppings, setToppings] = useState([]); 
   
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
   const [view, setView] = useState('shop'); 
@@ -42,10 +42,15 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
+  // Store Settings State (พร้อมเพย์ / QR Code)
+  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '' });
+  const [editPromptPay, setEditPromptPay] = useState('');
+  const [editQrCodeImage, setEditQrCodeImage] = useState('');
+  
   // Menu & Topping Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true });
   const [editingMenu, setEditingMenu] = useState(null); 
-  const [newTopping, setNewTopping] = useState({ name: '', price: '' }); // ฟอร์มท็อปปิ้งใหม่
+  const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
 
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [] });
@@ -88,9 +93,21 @@ export default function App() {
       setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp - a.timestamp));
     });
 
-    // ดึงข้อมูลท็อปปิ้ง
     onSnapshot(collection(db, 'toppings'), snapshot => {
       setToppings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    // ดึงการตั้งค่าร้านค้าจาก Firestore
+    onSnapshot(doc(db, 'settings', 'store'), docSnap => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setStoreSettings(data);
+        setEditPromptPay(data.promptPayNo || '0812345678');
+        setEditQrCodeImage(data.qrCodeImage || '');
+      } else {
+        setEditPromptPay('0812345678');
+        setEditQrCodeImage('');
+      }
     });
   }, []);
 
@@ -224,7 +241,8 @@ export default function App() {
   };
 
   const copyPromptPay = () => {
-    navigator.clipboard.writeText("0812345678").then(() => {
+    const numToCopy = storeSettings.promptPayNo || '0812345678';
+    navigator.clipboard.writeText(numToCopy).then(() => {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     });
@@ -375,10 +393,15 @@ export default function App() {
                 {paymentMethod === 'promptpay' && (
                   <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center">
                     <p className="text-xs font-bold mb-4">สแกนชำระเงิน พร้อมแนบสลิป</p>
-                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:0812345678:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" alt="QR Code" />
+                    {/* ใช้รูป QR Code ที่อัปโหลด หรือ สร้าง QR อัตโนมัติจากเบอร์ที่ตั้งค่าไว้ */}
+                    {storeSettings.qrCodeImage ? (
+                      <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" alt="QR Code ร้าน" />
+                    ) : (
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" alt="QR Code อัตโนมัติ" />
+                    )}
                     
                     <div className="flex items-center justify-center gap-2 mb-6">
-                      <p className="text-xs text-gray-500 font-bold">พร้อมเพย์: 0812345678</p>
+                      <p className="text-xs text-gray-500 font-bold">พร้อมเพย์: {storeSettings.promptPayNo || '0812345678'}</p>
                       <button onClick={copyPromptPay} className="flex items-center gap-1 bg-white border border-gray-200 text-[#A67C52] px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-all">
                         {isCopied ? <CheckCircle size={14} className="text-green-500"/> : <Copy size={14}/>}
                         <span className="text-[10px] font-bold">{isCopied ? 'คัดลอกแล้ว' : 'คัดลอกเลข'}</span>
@@ -428,9 +451,13 @@ export default function App() {
           <div className="p-6 bg-white min-h-screen animate-in fade-in">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบแอดมิน</h2>
+            
+            {/* --- เพิ่มแถบ "ตั้งค่าร้าน" คืนมา --- */}
             <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
-              {['orders', 'menus'].map(t => (
-                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>{t === 'orders' ? 'ออร์เดอร์' : 'เมนู'}</button>
+              {['orders', 'menus', 'settings'].map(t => (
+                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>
+                  {t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : 'ตั้งค่าร้าน'}
+                </button>
               ))}
             </div>
 
@@ -479,13 +506,11 @@ export default function App() {
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    {/* โปรโมชั่นแถมมุก */}
                     <div className="flex items-center justify-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-orange-50">
                       <input type="checkbox" id="freePearl" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-5 h-5 accent-orange-400" />
                       <label htmlFor="freePearl" className="text-xs font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> แถมมุกฟรี</label>
                     </div>
 
-                    {/* สวิตช์เปิด-ปิด ให้ลูกค้ากดเพิ่มท็อปปิ้ง (เช่น ไข่มุก, วิปครีม แบบคิดเงินเพิ่ม) */}
                     <div className="flex items-center justify-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-gray-50">
                       <input type="checkbox" id="allowTopping" checked={editingMenu ? editingMenu.allowTopping !== false : newMenu.allowTopping !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowTopping: e.target.checked}) : setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-5 h-5 accent-[#A67C52]" />
                       <label htmlFor="allowTopping" className="text-xs font-bold text-gray-500">ใส่ท็อปปิ้งเสริมได้</label>
@@ -542,6 +567,49 @@ export default function App() {
                        </div>
                      </div>
                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* --- หน้าตั้งค่าร้านค้า (พร้อมเพย์ / QR) --- */}
+            {adminTab === 'settings' && (
+              <div className="space-y-8 animate-in fade-in">
+                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
+                  <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest text-center">ตั้งค่าช่องทางชำระเงิน</h3>
+                  
+                  <div>
+                    <label className="text-xs text-gray-500 mb-2 block font-bold">หมายเลขพร้อมเพย์ (เบอร์โทร หรือ บัตรประชาชน)</label>
+                    <input type="text" placeholder="เช่น 0812345678" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:border-[#A67C52]" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} />
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="text-xs text-gray-500 mb-2 block font-bold">อัปโหลดรูป QR Code ของร้าน (ถ้ามี)</label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex-1 cursor-pointer bg-white border border-gray-200 text-gray-500 py-4 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all">
+                        <Upload size={16}/> {editQrCodeImage ? 'เปลี่ยนรูป QR Code' : 'เลือกรูปจากเครื่อง'}
+                        <input type="file" accept="image/*" className="hidden" onChange={e => {
+                          const file = e.target.files[0];
+                          if(file) {
+                            const fr = new FileReader();
+                            fr.onload = (ev) => setEditQrCodeImage(ev.target.result);
+                            fr.readAsDataURL(file);
+                          }
+                        }} />
+                      </label>
+                      {editQrCodeImage && <img src={editQrCodeImage} className="w-16 h-16 rounded-xl object-cover shadow-sm border border-gray-100" alt="QR Preview" />}
+                      {editQrCodeImage && <button onClick={() => setEditQrCodeImage('')} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">*หากอัปโหลดรูป ระบบจะแสดงรูปนี้แทนการสร้าง QR Code อัตโนมัติในหน้าตะกร้าของลูกค้า</p>
+                  </div>
+
+                  <button onClick={async () => {
+                    try {
+                      await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true });
+                      alert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮');
+                    } catch(e) { alert("Error: " + e.message); }
+                  }} className="w-full bg-[#3D2C1E] text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4">
+                    บันทึกการตั้งค่าร้าน
+                  </button>
                 </div>
               </div>
             )}

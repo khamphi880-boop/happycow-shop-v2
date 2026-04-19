@@ -69,9 +69,18 @@ export default function App() {
   
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
   
-  // โหลดหน้าจอล่าสุดจาก LocalStorage
-  const [view, setView] = useState(() => localStorage.getItem('happycow_view') || 'shop'); 
+  // โหลดหน้าจอล่าสุดจาก LocalStorage หรือจากการกดลิงก์ดูรูปใน LINE
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'viewOrders') return 'myOrders';
+    return localStorage.getItem('happycow_view') || 'shop';
+  }); 
   const [isLoading, setIsLoading] = useState(true);
+  
+  // ตรวจสอบว่าเข้ามาจากลิงก์ดูรูปภาพหรือไม่ เพื่อโชว์หน้าโหลด
+  const [isLoadingOrders, setIsLoadingOrders] = useState(() => {
+    return new URLSearchParams(window.location.search).get('action') === 'viewOrders';
+  });
   
   // โหลดที่อยู่และหมายเหตุจาก LocalStorage
   const [address, setAddress] = useState(() => localStorage.getItem('happycow_address') || '');
@@ -112,6 +121,14 @@ export default function App() {
   useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
   useEffect(() => { localStorage.setItem('happycow_note', note); }, [note]);
   useEffect(() => { localStorage.setItem('happycow_paymentMethod', paymentMethod); }, [paymentMethod]);
+
+  // หน่วงเวลาหน้าจอรอสักครู่ตอนกดเข้าจากลิงก์ 2 วินาที
+  useEffect(() => {
+    if (isLoadingOrders) {
+      const timer = setTimeout(() => setIsLoadingOrders(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoadingOrders]);
 
   useEffect(() => {
     let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);
@@ -275,7 +292,7 @@ export default function App() {
                 action: {
                   type: "uri",
                   label: "📸 กดดูรูปถ่ายที่นี่",
-                  uri: `https://liff.line.me/${LIFF_ID}`
+                  uri: `https://liff.line.me/${LIFF_ID}?action=viewOrders`
                 }
               }
             ]
@@ -584,12 +601,12 @@ export default function App() {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง / เบอร์โทร</label>
-                    <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="เบอร์โทร และจุดส่งสินค้า..." className="w-full p-5 rounded-3xl bg-gray-50 h-24 text-sm outline-none border focus:border-[#A67C52]" />
+                    <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง</label>
+                    <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเลขที่ห้อง / ชื่อตึก / จุดสังเกต..." className="w-full p-5 rounded-3xl bg-gray-50 h-24 text-sm outline-none border focus:border-[#A67C52]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-[#A67C52] uppercase tracking-wider block mb-2 flex items-center gap-1"><MessageSquare size={14}/> หมายเหตุถึงร้านค้า</label>
-                    <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อย, แยกน้ำ..." className="w-full p-4 rounded-2xl bg-gray-50 text-sm outline-none border focus:border-[#A67C52]" />
+                    <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อย, ไม่รับหลอด..." className="w-full p-4 rounded-2xl bg-gray-50 text-sm outline-none border focus:border-[#A67C52]" />
                   </div>
                 </div>
                 {paymentMethod === 'promptpay' && (
@@ -638,45 +655,53 @@ export default function App() {
           <div className="p-6 space-y-6 flex-1 animate-in slide-in-from-right-10">
              <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
              <h2 className="text-3xl font-serif font-bold text-[#3D2C1E]">ประวัติการสั่งซื้อ</h2>
-             <div className="space-y-6">
-               {orders.filter(o => o.userId === lineProfile.userId).map(o => (
-                   <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 p-4">
-                      <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
-                        <div><span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
-                        <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
-                      </div>
-                      
-                      {/* รายการสินค้า */}
-                      <div className="space-y-1">{(o.items || []).map((item, idx) => {
-                         const blendText = item.allowBlend !== false ? (item.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
-                         return (
-                          <p key={idx} className="text-[11px] font-bold text-gray-400">
-                            {item.qty}x {item.name} ({blendText})
-                            {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
-                          </p>
-                         );
-                      })}</div>
+             
+             {isLoadingOrders ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-4 animate-in fade-in">
+                   <div className="w-12 h-12 border-4 border-[#A67C52] border-t-transparent rounded-full animate-spin"></div>
+                   <p className="text-[#A67C52] font-bold text-sm text-center">กำลังเปิดประวัติการสั่งซื้อ<br/>รอระบบสักครู่นะคะ 🐮...</p>
+                </div>
+             ) : (
+                 <div className="space-y-6">
+                   {orders.filter(o => o.userId === lineProfile.userId).map(o => (
+                       <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 p-4">
+                          <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
+                            <div><span className="text-[10px] font-bold text-[#A67C52] uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
+                            <div className="text-2xl font-serif font-bold text-[#3D2C1E]">฿{o.total}</div>
+                          </div>
+                          
+                          {/* รายการสินค้า */}
+                          <div className="space-y-1">{(o.items || []).map((item, idx) => {
+                             const blendText = item.allowBlend !== false ? (item.isBlended ? 'ปั่น' : 'เย็น') : 'เย็น/ปกติ';
+                             return (
+                              <p key={idx} className="text-[11px] font-bold text-gray-400">
+                                {item.qty}x {item.name} ({blendText})
+                                {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
+                              </p>
+                             );
+                          })}</div>
 
-                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ */}
-                      {o.status === 'completed' && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          {o.deliveryMessage && (
-                            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mb-3">
-                              <p className="text-[10px] font-bold text-[#A67C52] mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากแอดมิน:</p>
-                              <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
+                          {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ */}
+                          {o.status === 'completed' && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              {o.deliveryMessage && (
+                                <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mb-3">
+                                  <p className="text-[10px] font-bold text-[#A67C52] mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากแอดมิน:</p>
+                                  <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
+                                </div>
+                              )}
+                              {/* ปุ่มให้ลูกค้าดูรูปการจัดส่ง */}
+                              {o.deliveryImage && (
+                                <button onClick={() => setSelectedSlip(o.deliveryImage)} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all">
+                                   <Camera size={16}/> ดูรูปถ่ายตอนจัดส่ง
+                                </button>
+                              )}
                             </div>
                           )}
-                          {/* ปุ่มให้ลูกค้าดูรูปการจัดส่ง */}
-                          {o.deliveryImage && (
-                            <button onClick={() => setSelectedSlip(o.deliveryImage)} className="w-full bg-[#3D2C1E] text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all">
-                               <Camera size={16}/> ดูรูปถ่ายตอนจัดส่ง
-                            </button>
-                          )}
-                        </div>
-                      )}
-                   </div>
-               ))}
-             </div>
+                       </div>
+                   ))}
+                 </div>
+             )}
           </div>
         )}
 

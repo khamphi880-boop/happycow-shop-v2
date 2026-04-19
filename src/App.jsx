@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -75,7 +75,7 @@ export default function App() {
   // Admin State
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
-  const [adminTab, setAdminTab] = useState('orders');
+  const [adminTab, setAdminTab] = useState('orders'); // tabs: orders, menus, dashboard, settings
   const [selectedSlip, setSelectedSlip] = useState(null); 
   
   // Admin Delivery State
@@ -209,7 +209,7 @@ export default function App() {
     } catch (e) { alert(e.message); }
   };
 
-  // --- ฟังก์ชันยืนยันการส่งสินค้า (เก็บรูปลงฐานข้อมูลแบบถูกบีบอัด) ---
+  // --- ฟังก์ชันยืนยันการส่งสินค้า (เก็บรูปลงฐานข้อมูลแบบถูกบีบอัด + ส่งปุ่มดูรูป) ---
   const handleConfirmDelivery = async () => {
     if (!deliveryImage) return alert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
     setIsDelivering(true);
@@ -227,7 +227,7 @@ export default function App() {
         deliveryImage: deliveryImage // เซฟรูปลง Firestore
       });
 
-      // 2. สร้าง Flex Message แจ้งเตือนลูกค้าว่าส่งของแล้ว ให้เข้ามาดูรูปในเว็บ
+      // 2. สร้าง Flex Message แจ้งเตือนลูกค้า พร้อมแนบปุ่มพาไปหน้าเว็บ
       const flexMessage = {
         type: "flex", altText: "อัปเดตสถานะการจัดส่ง",
         contents: {
@@ -249,7 +249,18 @@ export default function App() {
                   { type: "text", text: deliveryLocation === 'room' ? 'หน้าห้อง' : 'หน้าตึก', size: "xs", weight: "bold", flex: 3 }
                 ]
               },
-              { type: "text", text: "📌 ลูกค้าสามารถดูรูปถ่ายการจัดส่งได้ที่เมนู 'ประวัติการสั่งซื้อ' ในระบบร้านนะคะ", wrap: true, size: "xxs", color: "#aaaaaa", margin: "md" }
+              { type: "text", text: "📌 ลูกค้าสามารถกดปุ่มด้านล่าง เพื่อดูรูปถ่ายการจัดส่งได้เลยนะคะ", wrap: true, size: "xxs", color: "#aaaaaa", margin: "md" },
+              {
+                type: "button",
+                style: "primary",
+                color: "#A67C52",
+                margin: "md",
+                action: {
+                  type: "uri",
+                  label: "📸 กดดูรูปถ่ายที่นี่",
+                  uri: `https://liff.line.me/${LIFF_ID}`
+                }
+              }
             ]
           }
         }
@@ -268,6 +279,52 @@ export default function App() {
       alert("เกิดข้อผิดพลาด: " + e.message); 
     }
     setIsDelivering(false);
+  };
+
+  // --- ฟังก์ชันคำนวณรายรับ (แอดมิน) ---
+  const calculateRevenue = () => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
+
+    let daily = 0, monthly = 0, yearly = 0;
+    
+    orders.filter(o => o.status === 'completed').forEach(o => {
+      if (o.timestamp >= startOfDay) daily += o.total;
+      if (o.timestamp >= startOfMonth) monthly += o.total;
+      if (o.timestamp >= startOfYear) yearly += o.total;
+    });
+
+    return { daily, monthly, yearly };
+  };
+
+  // --- ฟังก์ชัน Export เป็น CSV (Google Sheets) ---
+  const exportToCSV = () => {
+    const completedOrders = orders.filter(o => o.status === 'completed');
+    if (completedOrders.length === 0) return alert('ยังไม่มีข้อมูลคำสั่งซื้อที่เสร็จสมบูรณ์ครับ');
+
+    // ใส่ BOM (\uFEFF) นำหน้าเพื่อให้ Excel หรือ Google Sheets อ่านภาษาไทยได้ถูกต้อง
+    let csv = "\uFEFFวันที่และเวลา,ชื่อลูกค้า,ยอดรวม(บาท),ช่องทางชำระเงิน,จุดจัดส่ง,ที่อยู่\n"; 
+    
+    completedOrders.forEach(o => {
+      const date = new Date(o.timestamp).toLocaleString('th-TH');
+      const payment = o.paymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน';
+      const location = o.deliveryLocation === 'room' ? 'หน้าห้อง' : (o.deliveryLocation === 'building' ? 'หน้าตึก' : '-');
+      const lineName = `"${(o.lineName||'ไม่ทราบชื่อ').replace(/"/g, '""')}"`;
+      const addressEscaped = `"${(o.address||'').replace(/"/g, '""')}"`;
+      
+      csv += `"${date}",${lineName},${o.total},${payment},${location},${addressEscaped}\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `สรุปรายรับร้านวัวนมอารมณ์ดี_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // --- ฟังก์ชันสั่งซื้อ (ลูกค้า) ---
@@ -376,6 +433,8 @@ export default function App() {
     if (activeCategory === '🔥 เมนูขายดี') return bestSellers;
     return menuItems.filter(i => i.category === activeCategory);
   }, [activeCategory, menuItems, bestSellers]);
+
+  const revData = calculateRevenue();
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-[#F5EEDC] flex flex-col font-sans text-[#3D2C1E]">
@@ -563,7 +622,7 @@ export default function App() {
                          );
                       })}</div>
 
-                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ (เอาปุ่มกลับมาแล้วครับ) */}
+                      {/* แสดงข้อความจากแอดมิน และ ปุ่มดูรูปส่งของ */}
                       {o.status === 'completed' && (
                         <div className="mt-4 pt-4 border-t border-gray-100">
                           {o.deliveryMessage && (
@@ -592,14 +651,46 @@ export default function App() {
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <h2 className="text-2xl font-serif font-bold mb-6 text-[#3D2C1E]">ระบบแอดมิน</h2>
             
-            <div className="flex gap-2 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
-              {['orders', 'menus', 'settings'].map(t => (
-                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>
-                  {t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : 'ตั้งค่าร้าน'}
+            <div className="flex gap-1 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
+              {['orders', 'menus', 'dashboard', 'settings'].map(t => (
+                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] sm:text-xs font-bold transition-all ${adminTab === t ? 'bg-[#3D2C1E] text-white shadow-md' : 'text-gray-500 uppercase'}`}>
+                  {t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : t === 'dashboard' ? 'รายรับ' : 'ตั้งค่า'}
                 </button>
               ))}
             </div>
 
+            {/* TAB: รายรับ (Dashboard) */}
+            {adminTab === 'dashboard' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="bg-[#3D2C1E] text-white p-6 rounded-[2.5rem] shadow-xl">
+                  <div className="flex items-center gap-2 mb-4 opacity-80">
+                    <TrendingUp size={20} />
+                    <h3 className="font-bold text-sm">สรุปยอดขายวันนี้</h3>
+                  </div>
+                  <h1 className="text-5xl font-serif font-bold">฿{revData.daily.toLocaleString()}</h1>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-orange-50 border border-orange-100 p-5 rounded-[2rem] shadow-sm">
+                    <p className="text-[10px] font-bold text-orange-600 uppercase mb-2">ยอดขายเดือนนี้</p>
+                    <h2 className="text-2xl font-bold text-[#3D2C1E]">฿{revData.monthly.toLocaleString()}</h2>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-100 p-5 rounded-[2rem] shadow-sm">
+                    <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">ยอดขายปีนี้</p>
+                    <h2 className="text-2xl font-bold text-[#3D2C1E]">฿{revData.yearly.toLocaleString()}</h2>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button onClick={exportToCSV} className="w-full bg-[#0F9D58] text-white py-5 rounded-[2rem] font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <Download size={18} /> Export บัญชีรายรับ (CSV)
+                  </button>
+                  <p className="text-center text-[10px] text-gray-400 mt-3">*นำไฟล์ CSV ไปเปิดใน Google Sheets หรือ Excel เพื่อดูสรุปบัญชีได้เลยครับ</p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: ออร์เดอร์ */}
             {adminTab === 'orders' && (
               <div className="space-y-4">
                 {orders.map((o, idx) => (
@@ -628,7 +719,6 @@ export default function App() {
                       <div className="flex gap-2 border-t pt-3 mt-2">
                         {o.status === 'pending' && <button onClick={() => updateOrderStatus(o.id, 'cooking')} className="flex-1 bg-orange-400 text-white py-4 rounded-xl text-[11px] font-bold shadow-lg animate-pulse active:scale-95 transition-all">กดยอมรับออเดอร์</button>}
                         
-                        {/* เปลี่ยนปุ่มส่งสินค้า ให้เปิด Modal แนบรูปแทน */}
                         {o.status === 'cooking' && (
                           <button onClick={() => { setDeliveryModal(o); setDeliveryImage(''); setDeliveryLocation('room'); }} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-95 transition-all">
                              <Check size={14}/> ส่งสินค้าแล้ว
@@ -643,6 +733,7 @@ export default function App() {
               </div>
             )}
 
+            {/* TAB: เมนู */}
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
                 {/* ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน */}
@@ -742,6 +833,7 @@ export default function App() {
               </div>
             )}
 
+            {/* TAB: ตั้งค่า */}
             {adminTab === 'settings' && (
               <div className="space-y-8 animate-in fade-in">
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
@@ -890,12 +982,13 @@ export default function App() {
 
             <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center">
                <p className="text-xs font-bold mb-3">แนบรูปถ่ายเป็นหลักฐาน</p>
+               
+               {/* หมายเหตุ: นำ capture="environment" ออกแล้ว ทำให้เลือกรูปจากแกลเลอรีได้ครับ */}
                <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all">
-                  <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกรูป'}
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
+                  <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกจากแกลเลอรี'}
+                  <input type="file" accept="image/*" className="hidden" onChange={async e => {
                      const file = e.target.files[0];
                      if(file){
-                        // บีบอัดรูปถ่ายตอนส่งสินค้าให้เล็กลงก่อน
                         const compressedImage = await compressImage(file);
                         setDeliveryImage(compressedImage);
                      }

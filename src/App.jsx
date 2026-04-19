@@ -20,6 +20,43 @@ const LIFF_ID = "2009828681-C1cb8QC3";
 const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
 
+// --- ฟังก์ชันบีบอัดรูปภาพ (ลดขนาดไฟล์ให้เล็กลง) ---
+const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // แปลงภาพเป็น JPEG และลด Quality ลงเหลือ 70%
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+    };
+  });
+};
+
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -483,8 +520,12 @@ export default function App() {
 
                     <label className="cursor-pointer bg-[#3D2C1E] text-white py-4 px-8 rounded-2xl text-[11px] font-bold inline-flex items-center gap-2 shadow-lg active:scale-95">
                       <Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แนบรูปสลิป'}
-                      <input type="file" accept="image/*" className="hidden" onChange={e => {
-                        const fr = new FileReader(); fr.onload = (ev) => setSlipImage(ev.target.result); fr.readAsDataURL(e.target.files[0]);
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          const compressedImage = await compressImage(file);
+                          setSlipImage(compressedImage);
+                        }
                       }} />
                     </label>
                     {slipImage && <img src={slipImage} className="mt-4 h-32 mx-auto rounded-lg shadow-md border-2 border-white" alt="Slip" />}
@@ -640,8 +681,12 @@ export default function App() {
 
                   <label className="cursor-pointer bg-white border p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-[#A67C52] transition-all mt-4">
                     <Upload size={18} className="inline mr-2"/> {(editingMenu ? editingMenu.image : newMenu.image) ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
-                    <input type="file" accept="image/*" className="hidden" onChange={e => {
-                      const fr = new FileReader(); fr.onload = (ev) => editingMenu ? setEditingMenu({...editingMenu, image: ev.target.result}) : setNewMenu({...newMenu, image: ev.target.result}); fr.readAsDataURL(e.target.files[0]);
+                    <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const compressedImage = await compressImage(file);
+                        editingMenu ? setEditingMenu({...editingMenu, image: compressedImage}) : setNewMenu({...newMenu, image: compressedImage});
+                      }
                     }} />
                   </label>
                   <div className="flex gap-2">
@@ -709,12 +754,11 @@ export default function App() {
                     <div className="flex items-center gap-3">
                       <label className="flex-1 cursor-pointer bg-white border border-gray-200 text-gray-500 py-4 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-gray-50 transition-all">
                         <Upload size={16}/> {editQrCodeImage ? 'เปลี่ยนรูป QR Code' : 'เลือกรูปจากเครื่อง'}
-                        <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        <input type="file" accept="image/*" className="hidden" onChange={async e => {
                           const file = e.target.files[0];
                           if(file) {
-                            const fr = new FileReader();
-                            fr.onload = (ev) => setEditQrCodeImage(ev.target.result);
-                            fr.readAsDataURL(file);
+                            const compressedImage = await compressImage(file);
+                            setEditQrCodeImage(compressedImage);
                           }
                         }} />
                       </label>
@@ -845,12 +889,12 @@ export default function App() {
                <p className="text-xs font-bold mb-3">แนบรูปถ่ายเป็นหลักฐาน</p>
                <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all">
                   <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกรูป'}
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
                      const file = e.target.files[0];
                      if(file){
-                        const fr = new FileReader();
-                        fr.onload = ev => setDeliveryImage(ev.target.result);
-                        fr.readAsDataURL(file);
+                        // บีบอัดรูปถ่ายตอนส่งสินค้าให้เล็กลงก่อนเซฟ
+                        const compressedImage = await compressImage(file);
+                        setDeliveryImage(compressedImage);
                      }
                   }} />
                </label>

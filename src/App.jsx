@@ -59,17 +59,25 @@ const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => 
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [cart, setCart] = useState([]);
+  
+  // โหลดข้อมูลตะกร้าจาก LocalStorage ถ้ามี
+  const [cart, setCart] = useState(() => {
+    try { const saved = localStorage.getItem('happycow_cart'); return saved ? JSON.parse(saved) : []; }
+    catch(e) { return []; }
+  });
   const [toppings, setToppings] = useState([]); 
   
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
-  const [view, setView] = useState('shop'); 
+  
+  // โหลดหน้าจอล่าสุดจาก LocalStorage
+  const [view, setView] = useState(() => localStorage.getItem('happycow_view') || 'shop'); 
   const [isLoading, setIsLoading] = useState(true);
   
-  const [address, setAddress] = useState('');
-  const [note, setNote] = useState(''); 
+  // โหลดที่อยู่และหมายเหตุจาก LocalStorage
+  const [address, setAddress] = useState(() => localStorage.getItem('happycow_address') || '');
+  const [note, setNote] = useState(() => localStorage.getItem('happycow_note') || ''); 
   const [slipImage, setSlipImage] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('promptpay'); 
+  const [paymentMethod, setPaymentMethod] = useState(() => localStorage.getItem('happycow_paymentMethod') || 'promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
   
   // Admin State
@@ -97,6 +105,13 @@ export default function App() {
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [] });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
+
+  // --- ระบบบันทึกข้อมูลอัตโนมัติเมื่อมีการเปลี่ยนแปลง (กันข้อมูลหายตอนสลับแอป) ---
+  useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
+  useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
+  useEffect(() => { localStorage.setItem('happycow_note', note); }, [note]);
+  useEffect(() => { localStorage.setItem('happycow_paymentMethod', paymentMethod); }, [paymentMethod]);
 
   useEffect(() => {
     let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);

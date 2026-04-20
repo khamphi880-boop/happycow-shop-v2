@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download, ArrowUp, ArrowDown } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, TrendingUp, Download, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 // --- 1. Firebase Configuration ---
 const firebaseConfig = {
@@ -87,6 +87,7 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminTab, setAdminTab] = useState('orders');
   const [selectedSlip, setSelectedSlip] = useState(null); 
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
   
   // Admin Delivery State
   const [deliveryModal, setDeliveryModal] = useState(null);
@@ -99,7 +100,7 @@ export default function App() {
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   
-  // Menu & Topping Management (เพิ่ม isOnlyBlend)
+  // Menu & Topping Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
@@ -108,16 +109,26 @@ export default function App() {
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [] });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchHistory, setSearchHistory] = useState(() => {
+    try { const saved = localStorage.getItem('happycow_searchHistory'); return saved ? JSON.parse(saved) : []; }
+    catch(e) { return []; }
+  });
+  const [popularSearches, setPopularSearches] = useState([]);
+
   // DnD State สำหรับจัดการการลากวางเมนู
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
-  const editFormRef = useRef(null); // Ref สำหรับให้เลื่อนหน้าจอไปที่ฟอร์มแก้ไข
+  const editFormRef = useRef(null); 
 
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
   useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
   useEffect(() => { localStorage.setItem('happycow_note', note); }, [note]);
   useEffect(() => { localStorage.setItem('happycow_paymentMethod', paymentMethod); }, [paymentMethod]);
+  useEffect(() => { localStorage.setItem('happycow_searchHistory', JSON.stringify(searchHistory)); }, [searchHistory]);
 
   useEffect(() => {
     if (isLoadingOrders) {
@@ -160,6 +171,20 @@ export default function App() {
       } else {
         setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true });
         setEditPromptPay('0812345678'); setEditQrCodeImage('');
+      }
+    });
+
+    // ดึงข้อมูลคำค้นหายอดฮิต
+    onSnapshot(doc(db, 'settings', 'search_stats'), docSnap => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const sorted = Object.entries(data)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(entry => entry[0]);
+        setPopularSearches(sorted);
+      } else {
+        setPopularSearches([]);
       }
     });
   }, []);
@@ -206,7 +231,6 @@ export default function App() {
 
   const handleDeleteMenu = async (id) => { if(window.confirm('ลบเมนูนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'menus', id)); };
 
-  // ฟังก์ชันลากวาง (Drag & Drop) จัดเรียงลำดับใหม่
   const handleSortDrop = async (itemsInCategory) => {
     if (dragItem.current === null || dragOverItem.current === null) return;
     if (dragItem.current === dragOverItem.current) {
@@ -215,7 +239,6 @@ export default function App() {
       return;
     }
     
-    // เรียงลำดับ Array ใหม่ในฝั่ง Client ก่อน
     const newItems = [...itemsInCategory];
     const draggedItemContent = newItems[dragItem.current];
     newItems.splice(dragItem.current, 1);
@@ -223,7 +246,6 @@ export default function App() {
     
     setIsLoading(true);
     try {
-      // อัปเดต sortOrder ใหม่ทั้งหมดในหมวดหมู่นี้
       const updatePromises = newItems.map((item, index) => {
         const newOrder = Date.now() + index * 1000;
         return updateDoc(doc(db, 'menus', item.id), { sortOrder: newOrder });
@@ -236,7 +258,6 @@ export default function App() {
     dragOverItem.current = null;
   };
 
-  // ฟังก์ชันเลื่อนลูกศรขึ้นลง (สำหรับมือถือที่ไม่รองรับลากวาง)
   const handleMoveMenu = async (item, direction, itemsInCategory) => {
     const currentIndex = itemsInCategory.findIndex(i => i.id === item.id);
     if (direction === 'up' && currentIndex > 0) {
@@ -267,6 +288,20 @@ export default function App() {
 
   const handleDeleteTopping = async (id) => { if(window.confirm('ลบท็อปปิ้งนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'toppings', id)); };
   const updateOrderStatus = async (orderId, newStatus) => { try { await updateDoc(doc(db, 'orders', orderId), { status: newStatus }); } catch (e) { alert(e.message); } };
+
+  // --- การจัดเก็บสถิติและยืนยันการค้นหา ---
+  const handleSearchSubmit = async (term) => {
+    if (!term.trim()) return;
+    const cleanTerm = term.trim().toLowerCase();
+    
+    setSearchHistory(prev => [cleanTerm, ...prev.filter(t => t !== cleanTerm)].slice(0, 5));
+    setIsSearchFocused(false);
+    setSearchQuery(term);
+    
+    try {
+      await setDoc(doc(db, 'settings', 'search_stats'), { [cleanTerm]: increment(1) }, { merge: true });
+    } catch (e) { console.error("Error saving search stats", e); }
+  };
 
   const handleConfirmDelivery = async () => {
     if (!deliveryImage) return alert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
@@ -307,7 +342,6 @@ export default function App() {
     const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
     let daily = 0, monthly = 0, yearly = 0;
     
-    // คำนวณรายรับย้อนหลัง 7 วัน
     const last7DaysMap = {};
     for (let i = 0; i < 7; i++) {
         const d = new Date();
@@ -327,7 +361,6 @@ export default function App() {
     });
     
     const dailyHistory = Object.keys(last7DaysMap).map(date => ({ date, total: last7DaysMap[date] }));
-
     return { daily, monthly, yearly, dailyHistory };
   };
 
@@ -350,15 +383,14 @@ export default function App() {
 
   const updateStoreStatus = async (status) => { try { await setDoc(doc(db, 'settings', 'store'), { isStoreOpen: status }, { merge: true }); alert(`เปลี่ยนสถานะเรียบร้อย! 🐮`); } catch(e) { alert("Error: " + e.message); } };
 
-  // --- เปิด Modal ลูกค้า ---
   const openOptionModal = (item) => {
     if (item.isSoldOut) return;
     setOptionModalItem(item);
-    // เซ็ตค่าเริ่มต้น isBlended เป็น true หากสินค้านั้นบังคับเฉพาะปั่น
     setTempOptions({ sweetness: '100%', isBlended: item.isOnlyBlend ? true : false, addPearl: item.hasFreePearl, selectedToppings: [] });
+    // ถ้าคลิกสั่งจากผลการค้นหา ให้บันทึกสถิติการค้นหานี้ด้วย
+    if(searchQuery) handleSearchSubmit(searchQuery);
   };
 
-  // --- ฟังก์ชันรับ Text การปั่น ---
   const getBlendText = (item) => {
     if (item.isOnlyBlend) return 'ปั่น';
     if (item.allowBlend === false) return 'เย็น/ปกติ';
@@ -423,16 +455,19 @@ export default function App() {
     return sortedMenus.length === 0 ? menuItems.slice(0, 4) : sortedMenus;
   }, [orders, menuItems]);
 
-  const filteredItems = React.useMemo(() => {
+  const displayedItems = React.useMemo(() => {
+    if (searchQuery) {
+      return menuItems.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
     if (activeCategory === '🔥 เมนูขายดี') return bestSellers;
     return menuItems.filter(i => i.category === activeCategory).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
-  }, [activeCategory, menuItems, bestSellers]);
+  }, [activeCategory, menuItems, bestSellers, searchQuery]);
 
   const promotedItems = React.useMemo(() => menuItems.filter(i => i.isPromoted).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0)), [menuItems]);
 
   const sliderRef = useRef(null);
   useEffect(() => {
-    if (view !== 'shop' || promotedItems.length <= 1) return;
+    if (view !== 'shop' || promotedItems.length <= 1 || searchQuery) return;
     const interval = setInterval(() => {
       if (sliderRef.current) {
          const { scrollLeft, scrollWidth, clientWidth } = sliderRef.current;
@@ -441,18 +476,17 @@ export default function App() {
       }
     }, 3500);
     return () => clearInterval(interval);
-  }, [view, promotedItems.length]);
+  }, [view, promotedItems.length, searchQuery]);
 
   const revData = calculateRevenue();
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#F5EEDC] flex flex-col font-sans text-[#3D2C1E]">
+    <div className="max-w-md mx-auto min-h-screen bg-[#F5EEDC] flex flex-col font-sans text-[#3D2C1E] relative">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&display=swap');
         .font-serif { font-family: 'Vollkorn', serif; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         
-        /* CSS Animations สำหรับเพิ่มความน่าดึงดูด */
         @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         .animate-shimmer { position: relative; overflow: hidden; }
         .animate-shimmer::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2.5s infinite; }
@@ -467,7 +501,7 @@ export default function App() {
       `}</style>
 
       {/* Header */}
-      <header className="sticky top-0 z-[50] bg-white/95 p-4 flex justify-between items-center border-b border-[#A67C52]/10 shadow-sm">
+      <header className="sticky top-0 z-[50] bg-white/95 p-4 flex justify-between items-center border-b border-[#A67C52]/10 shadow-sm relative">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('shop')}>
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-[#3D2C1E] text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
@@ -494,13 +528,65 @@ export default function App() {
         </div>
       </header>
 
+      {/* Overlay สำหรับปิดการค้นหา */}
+      {isSearchFocused && view === 'shop' && <div className="fixed inset-0 z-[40]" onClick={() => setIsSearchFocused(false)}></div>}
+
       {/* Main Content */}
       <main className="flex-1 pb-10">
         {view === 'shop' && (
           <div className="animate-in fade-in">
-            {/* --- แถบสไลด์เมนูแนะนำ --- */}
-            {promotedItems.length > 0 && (
-              <div className="pt-4 pb-2 bg-[#F5EEDC]">
+            
+            {/* --- ช่องค้นหา (Customer) --- */}
+            <div className="px-5 pt-4 pb-2 bg-[#F5EEDC] sticky top-[73px] z-[45]">
+              <div className="relative z-[50]">
+                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input 
+                   type="text" 
+                   value={searchQuery} 
+                   onChange={e => setSearchQuery(e.target.value)}
+                   onFocus={() => setIsSearchFocused(true)}
+                   onKeyDown={e => { if (e.key === 'Enter') handleSearchSubmit(searchQuery); }}
+                   placeholder="ค้นหาเมนูที่คุณอยากดื่ม..." 
+                   className="w-full pl-11 pr-10 py-3.5 rounded-[1.5rem] text-sm outline-none shadow-sm focus:ring-2 focus:ring-[#A67C52] border border-gray-100" 
+                />
+                {searchQuery && (
+                  <button onClick={() => { setSearchQuery(''); setIsSearchFocused(false); }} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 active:scale-90 bg-gray-100 rounded-full p-1"><X size={14}/></button>
+                )}
+              </div>
+
+              {/* Suggestion Dropdown */}
+              {isSearchFocused && !searchQuery && (searchHistory.length > 0 || popularSearches.length > 0) && (
+                <div className="absolute top-[110%] left-5 right-5 bg-white rounded-[2rem] shadow-2xl border border-gray-100 p-5 z-[50] animate-in fade-in slide-in-from-top-2">
+                   {searchHistory.length > 0 && (
+                      <div className="mb-5">
+                         <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-[11px] font-bold text-gray-400 flex items-center gap-1 uppercase tracking-wider"><Clock size={14}/> ประวัติการค้นหา</h4>
+                            <button onClick={() => setSearchHistory([])} className="text-[10px] text-red-400 font-bold bg-red-50 px-2 py-1 rounded-lg">ล้าง</button>
+                         </div>
+                         <div className="flex flex-wrap gap-2">
+                            {searchHistory.map(h => (
+                               <button key={h} onClick={() => handleSearchSubmit(h)} className="bg-gray-50 hover:bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full text-xs border border-gray-200 transition-all">{h}</button>
+                            ))}
+                         </div>
+                      </div>
+                   )}
+                   {popularSearches.length > 0 && (
+                      <div>
+                         <h4 className="text-[11px] font-bold text-orange-500 flex items-center gap-1 mb-3 uppercase tracking-wider"><TrendingUp size={14}/> คำค้นหายอดฮิต 🔥</h4>
+                         <div className="flex flex-wrap gap-2">
+                            {popularSearches.map(p => (
+                               <button key={p} onClick={() => handleSearchSubmit(p)} className="bg-orange-50 hover:bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs border border-orange-100 font-bold transition-all shadow-sm">{p}</button>
+                            ))}
+                         </div>
+                      </div>
+                   )}
+                </div>
+              )}
+            </div>
+
+            {/* --- แถบสไลด์เมนูแนะนำ (ซ่อนตอนกำลังค้นหา) --- */}
+            {!searchQuery && promotedItems.length > 0 && (
+              <div className="pt-2 pb-2 bg-[#F5EEDC]">
                 <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
                   {promotedItems.map(item => (
                     <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
@@ -531,18 +617,23 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex gap-2 overflow-x-auto hide-scrollbar p-4 sticky top-[73px] z-[40] bg-[#F5EEDC]/95">
-              {CATEGORIES.map(c => (
-                <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c && c === '🔥 เมนูขายดี' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : activeCategory === c ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-400 border-gray-100'}`}>{c}</button>
-              ))}
-            </div>
+            {/* --- หมวดหมู่ (ซ่อนตอนกำลังค้นหา) --- */}
+            {!searchQuery && (
+              <div className="flex gap-2 overflow-x-auto hide-scrollbar px-5 py-3 sticky top-[138px] z-[40] bg-[#F5EEDC]/95 backdrop-blur-sm">
+                {CATEGORIES.map(c => (
+                  <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c && c === '🔥 เมนูขายดี' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : activeCategory === c ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-400 border-gray-100'}`}>{c}</button>
+                ))}
+              </div>
+            )}
 
-            <div className="p-5">
+            {/* --- รายการเมนู --- */}
+            <div className="px-5 pb-5 pt-2">
+              {searchQuery && <p className="text-sm font-bold text-gray-500 mb-4 ml-1">ผลการค้นหา "{searchQuery}" ({displayedItems.length} รายการ)</p>}
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
-                  {filteredItems.map((item, index) => {
+                  {displayedItems.map((item, index) => {
                     const isSpecial = item.category === 'เมนูพิเศษ';
-                    const isBestSeller = activeCategory === '🔥 เมนูขายดี';
+                    const isBestSeller = !searchQuery && activeCategory === '🔥 เมนูขายดี';
                     return (
                     <div key={item.id} onClick={() => openOptionModal(item)} className={`rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${isSpecial ? 'special-bg glow-effect' : 'bg-white'} ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:-translate-y-1 active:scale-95'}`}>
                       
@@ -564,28 +655,26 @@ export default function App() {
 
                       <div className="aspect-square bg-gray-50 relative">
                          <img src={item.image} className={`w-full h-full object-cover ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
-                         {isBestSeller && item.sales > 10 && (
+                         {(!searchQuery || item.sales > 10) && item.sales > 10 && (
                             <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[8px] px-1.5 py-0.5 rounded-md font-bold floating-badge">ฮิตมาก 🔥</div>
                          )}
                       </div>
                       <div className="p-4 text-center">
                         <h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4>
                         <p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p>
-                        {isBestSeller && item.sales > 0 && <p className="text-[9px] text-green-600 font-bold mt-1 bg-green-50 rounded px-1 py-0.5 inline-block shadow-sm">ขายไปแล้ว {item.sales} แก้ว</p>}
+                        {(!searchQuery && isBestSeller) && item.sales > 0 && <p className="text-[9px] text-green-600 font-bold mt-1 bg-green-50 rounded px-1 py-0.5 inline-block shadow-sm">ขายไปแล้ว {item.sales} แก้ว</p>}
                         {isSpecial && !isBestSeller && <p className="text-[8px] text-[#A67C52] mt-1 font-bold">เมนูสุดพรีเมียม</p>}
                       </div>
                     </div>
                   )})}
                   
-                  {filteredItems.length === 0 && activeCategory !== '🔥 เมนูขายดี' && (
+                  {displayedItems.length === 0 && (
                     <div className="col-span-2 py-20 text-center flex flex-col items-center gap-4">
                       <AlertCircle size={40} className="text-gray-200" />
-                      <p className="text-gray-400 text-sm">ยังไม่มีเมนูในหมวด "{activeCategory}"</p>
+                      <p className="text-gray-400 text-sm">
+                        {searchQuery ? `ไม่พบเมนูที่ตรงกับ "${searchQuery}"` : `ยังไม่มีเมนูในหมวด "${activeCategory}"`}
+                      </p>
                     </div>
-                  )}
-
-                  {filteredItems.length === 0 && activeCategory === '🔥 เมนูขายดี' && (
-                     <div className="col-span-2 py-20 text-center opacity-30 italic">รอการสั่งซื้อครั้งแรก เพื่อจัดอันดับเมนูขายดีครับ 🐮</div>
                   )}
                 </div>
               )}
@@ -593,6 +682,7 @@ export default function App() {
           </div>
         )}
 
+        {/* ... Cart & My Orders Views (Unchanged) ... */}
         {view === 'cart' && (
           <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
@@ -670,7 +760,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- ฝั่งลูกค้า: ประวัติการสั่งซื้อ --- */}
         {view === 'myOrders' && (
           <div className="p-6 space-y-6 flex-1 animate-in slide-in-from-right-10">
              <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
@@ -755,7 +844,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* สรุปรายรับรายวัน */}
                 <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm mt-4">
                    <h3 className="font-bold text-sm text-[#3D2C1E] mb-4 border-b border-gray-50 pb-3 flex items-center gap-2"><Clock size={16}/> สรุปรายรับรายวัน (7 วันล่าสุด)</h3>
                    <div className="space-y-3">
@@ -820,7 +908,20 @@ export default function App() {
             {/* TAB: เมนู */}
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
-                {/* ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน */}
+                
+                {/* --- ช่องค้นหา (Admin) --- */}
+                <div className="bg-white p-2 rounded-3xl shadow-sm border border-gray-100 relative">
+                   <Search size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" />
+                   <input 
+                      type="text" 
+                      value={adminSearchQuery} 
+                      onChange={e => setAdminSearchQuery(e.target.value)} 
+                      placeholder="ค้นหาชื่อเมนู เพื่อแก้ไข..." 
+                      className="w-full pl-12 pr-10 py-4 rounded-2xl text-sm outline-none bg-white focus:ring-2 focus:ring-[#A67C52] transition-all"
+                   />
+                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1.5 rounded-full"><X size={14}/></button>}
+                </div>
+
                 <div ref={editFormRef} className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative scroll-mt-24">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
@@ -834,7 +935,6 @@ export default function App() {
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    {/* ปุ่ม: เฉพาะปั่นเท่านั้น */}
                     <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-blue-50 rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-100">
                       <input type="checkbox" checked={editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend} onChange={e => {
                         const val = e.target.checked;
@@ -844,7 +944,6 @@ export default function App() {
                       <span className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Zap size={14} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น (เช่น สมูทตี้)</span>
                     </label>
 
-                    {/* ปุ่ม: มีเมนูปั่น (จะถูกซ่อนให้กดไม่ได้ ถ้าด้านบนถูกเลือกแล้ว) */}
                     <label className={`flex items-center justify-center gap-1 p-3 rounded-2xl shadow-sm border cursor-pointer ${ (editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend) ? 'bg-gray-100 border-gray-200 opacity-50' : 'bg-white border-blue-50 hover:bg-blue-50'}`}>
                       <input type="checkbox" disabled={editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend} checked={editingMenu ? (editingMenu.isOnlyBlend || editingMenu.allowBlend !== false) : (newMenu.isOnlyBlend || newMenu.allowBlend !== false)} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowBlend: e.target.checked}) : setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400" />
                       <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
@@ -916,9 +1015,14 @@ export default function App() {
                 
                 <div className="space-y-8">
                   {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(category => {
-                    const itemsInCategory = menuItems
+                    let itemsInCategory = menuItems
                       .filter(item => item.category === category)
                       .sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
+
+                    // กรองตามคำค้นหา (Admin)
+                    if (adminSearchQuery) {
+                       itemsInCategory = itemsInCategory.filter(item => item.name.toLowerCase().includes(adminSearchQuery.toLowerCase()));
+                    }
 
                     if (itemsInCategory.length === 0) return null;
 
@@ -936,15 +1040,14 @@ export default function App() {
                             className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
                           >
                             <div className="flex items-center gap-3">
-                              {/* Icon สำหรับบอกว่าลากได้ (Desktop) และ ปุ่มลูกศร (Mobile) */}
                               <div className="flex flex-col items-center gap-1 z-10">
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0} className={`p-1.5 rounded-lg transition-all ${idx === 0 ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === 0 || adminSearchQuery ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
                                 <div className="text-gray-300 flex-col items-center justify-center px-1 hidden sm:flex">
                                   <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
                                   <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
                                   <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
                                 </div>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 || adminSearchQuery ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
                               </div>
                               <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
                               <div>
@@ -974,6 +1077,9 @@ export default function App() {
                       </div>
                     );
                   })}
+                  {adminSearchQuery && menuItems.filter(item => item.name.toLowerCase().includes(adminSearchQuery.toLowerCase())).length === 0 && (
+                     <div className="py-10 text-center opacity-30 italic">ไม่พบเมนูที่ตรงกับ "{adminSearchQuery}"</div>
+                  )}
                 </div>
               </div>
             )}

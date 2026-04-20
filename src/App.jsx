@@ -108,6 +108,10 @@ export default function App() {
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [] });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
+  // DnD State สำหรับจัดการการลากวางเมนู
+  const dragItem = useRef(null);
+  const dragOverItem = useRef(null);
+
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
   useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
@@ -201,23 +205,34 @@ export default function App() {
 
   const handleDeleteMenu = async (id) => { if(window.confirm('ลบเมนูนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'menus', id)); };
 
-  const handleMoveMenu = async (item, direction, itemsInCategory) => {
-    const currentIndex = itemsInCategory.findIndex(i => i.id === item.id);
-    if (direction === 'up' && currentIndex > 0) {
-      const prevItem = itemsInCategory[currentIndex - 1];
-      const currentOrder = item.sortOrder || item.createdAt || Date.now();
-      let prevOrder = prevItem.sortOrder || prevItem.createdAt || (Date.now() - 1000);
-      if (currentOrder === prevOrder) prevOrder -= 1;
-      await updateDoc(doc(db, 'menus', item.id), { sortOrder: prevOrder });
-      await updateDoc(doc(db, 'menus', prevItem.id), { sortOrder: currentOrder });
-    } else if (direction === 'down' && currentIndex < itemsInCategory.length - 1) {
-      const nextItem = itemsInCategory[currentIndex + 1];
-      const currentOrder = item.sortOrder || item.createdAt || Date.now();
-      let nextOrder = nextItem.sortOrder || nextItem.createdAt || (Date.now() + 1000);
-      if (currentOrder === nextOrder) nextOrder += 1;
-      await updateDoc(doc(db, 'menus', item.id), { sortOrder: nextOrder });
-      await updateDoc(doc(db, 'menus', nextItem.id), { sortOrder: currentOrder });
+  // ฟังก์ชันลากวาง (Drag & Drop) จัดเรียงลำดับใหม่
+  const handleSortDrop = async (itemsInCategory) => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) {
+      dragItem.current = null;
+      dragOverItem.current = null;
+      return;
     }
+    
+    // เรียงลำดับ Array ใหม่ในฝั่ง Client ก่อน
+    const newItems = [...itemsInCategory];
+    const draggedItemContent = newItems[dragItem.current];
+    newItems.splice(dragItem.current, 1);
+    newItems.splice(dragOverItem.current, 0, draggedItemContent);
+    
+    setIsLoading(true);
+    try {
+      // อัปเดต sortOrder ใหม่ทั้งหมดในหมวดหมู่นี้
+      const updatePromises = newItems.map((item, index) => {
+        const newOrder = Date.now() + index * 1000;
+        return updateDoc(doc(db, 'menus', item.id), { sortOrder: newOrder });
+      });
+      await Promise.all(updatePromises);
+    } catch (e) { console.error(e); }
+    setIsLoading(false);
+    
+    dragItem.current = null;
+    dragOverItem.current = null;
   };
 
   const handleAddTopping = async () => {
@@ -398,6 +413,19 @@ export default function App() {
         @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&display=swap');
         .font-serif { font-family: 'Vollkorn', serif; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* CSS Animations สำหรับเพิ่มความน่าดึงดูด */
+        @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        .animate-shimmer { position: relative; overflow: hidden; }
+        .animate-shimmer::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2.5s infinite; }
+        
+        @keyframes pulseGlow { from { box-shadow: 0 0 5px rgba(255, 165, 0, 0.2); } to { box-shadow: 0 0 15px rgba(255, 165, 0, 0.6); } }
+        .glow-effect { animation: pulseGlow 2s infinite alternate; border: 2px solid #ffd700; }
+        
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-3px); } 100% { transform: translateY(0px); } }
+        .floating-badge { animation: float 3s ease-in-out infinite; }
+        
+        .special-bg { background: linear-gradient(135deg, #FFF9F0 0%, #FFFFFF 100%); }
       `}</style>
 
       {/* Header */}
@@ -438,7 +466,7 @@ export default function App() {
                 <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
                   {promotedItems.map(item => (
                     <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
-                      <div onClick={() => openOptionModal(item)} className={`bg-white rounded-[2rem] p-3 shadow-md flex items-center gap-4 border border-orange-100 transition-all h-full relative overflow-hidden ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
+                      <div onClick={() => openOptionModal(item)} className={`bg-white rounded-[2rem] p-3 shadow-md flex items-center gap-4 border border-orange-100 transition-all h-full relative overflow-hidden animate-shimmer glow-effect ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
                          
                          {item.isSoldOut && (
                             <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
@@ -446,11 +474,17 @@ export default function App() {
                             </div>
                          )}
 
-                         <img src={item.image} className={`w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0 ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
+                         <div className="relative">
+                            <img src={item.image} className={`w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0 ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
+                            <div className="absolute -bottom-2 -right-2 text-2xl floating-badge drop-shadow-md">🔥</div>
+                         </div>
                          <div className="flex-1 flex flex-col justify-center py-1 pr-2">
-                            <span className="text-[9px] bg-red-500 text-white px-2 py-1 rounded-full w-fit mb-1.5 font-bold flex items-center gap-1 shadow-sm"><Star size={10} fill="white"/> เมนูแนะนำ</span>
+                            <span className="text-[9px] bg-gradient-to-r from-red-500 to-orange-400 text-white px-2 py-1 rounded-full w-fit mb-1.5 font-bold flex items-center gap-1 shadow-md">
+                               <Star size={10} fill="white"/> เมนูแนะนำ (Must Try!)
+                            </span>
                             <h4 className="font-bold text-sm leading-tight line-clamp-2 text-[#3D2C1E]">{item.name}</h4>
                             <p className="text-[#A67C52] font-bold text-base mt-1">฿{item.price}</p>
+                            <p className="text-[9px] text-orange-600 font-bold mt-1 bg-orange-50 w-fit px-1.5 py-0.5 rounded shadow-sm">สูตรลับเฉพาะทางร้าน ✨</p>
                          </div>
                       </div>
                     </div>
@@ -468,8 +502,11 @@ export default function App() {
             <div className="p-5">
               {isLoading ? <div className="p-20 text-center opacity-30 italic">กำลังโหลดเมนู...</div> : (
                 <div className="grid grid-cols-2 gap-5">
-                  {filteredItems.map((item, index) => (
-                    <div key={item.id} onClick={() => openOptionModal(item)} className={`bg-white rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
+                  {filteredItems.map((item, index) => {
+                    const isSpecial = item.category === 'เมนูพิเศษ';
+                    const isBestSeller = activeCategory === '🔥 เมนูขายดี';
+                    return (
+                    <div key={item.id} onClick={() => openOptionModal(item)} className={`rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${isSpecial ? 'special-bg glow-effect' : 'bg-white'} ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:-translate-y-1 active:scale-95'}`}>
                       
                       {item.isSoldOut && (
                          <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
@@ -477,20 +514,30 @@ export default function App() {
                          </div>
                       )}
 
-                      {item.hasFreePearl && !item.isSoldOut && <div className="absolute top-2 right-2 bg-orange-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-sm z-10 flex items-center gap-0.5"><Star size={8} fill="white"/> แถมมุกฟรี</div>}
+                      {item.hasFreePearl && !item.isSoldOut && <div className="absolute top-2 right-2 bg-gradient-to-r from-orange-400 to-red-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-md z-10 flex items-center gap-0.5 floating-badge"><Star size={8} fill="white"/> ฟรีไข่มุก!</div>}
                       
-                      {activeCategory === '🔥 เมนูขายดี' && (
-                        <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-sm flex items-center gap-1">อันดับ {index + 1}</div>
+                      {isBestSeller && (
+                        <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-md flex items-center gap-1 border border-white/20">อันดับ {index + 1} 👑</div>
+                      )}
+                      
+                      {isSpecial && !isBestSeller && (
+                        <div className="absolute top-2 left-2 bg-[#A67C52] text-white text-[9px] font-bold px-2 py-1 rounded-lg z-10 shadow-md">🌟 Limited</div>
                       )}
 
-                      <div className="aspect-square bg-gray-50"><img src={item.image} className={`w-full h-full object-cover ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} /></div>
+                      <div className="aspect-square bg-gray-50 relative">
+                         <img src={item.image} className={`w-full h-full object-cover ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
+                         {isBestSeller && item.sales > 10 && (
+                            <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[8px] px-1.5 py-0.5 rounded-md font-bold floating-badge">ฮิตมาก 🔥</div>
+                         )}
+                      </div>
                       <div className="p-4 text-center">
                         <h4 className="font-bold text-sm mb-1 line-clamp-1">{item.name}</h4>
                         <p className="text-[#A67C52] font-bold text-sm">฿{item.price}</p>
-                        {activeCategory === '🔥 เมนูขายดี' && item.sales > 0 && <p className="text-[9px] text-gray-400 mt-1">ขายไปแล้ว {item.sales} แก้ว</p>}
+                        {isBestSeller && item.sales > 0 && <p className="text-[9px] text-green-600 font-bold mt-1 bg-green-50 rounded px-1 py-0.5 inline-block shadow-sm">ขายไปแล้ว {item.sales} แก้ว</p>}
+                        {isSpecial && !isBestSeller && <p className="text-[8px] text-[#A67C52] mt-1 font-bold">เมนูสุดพรีเมียม</p>}
                       </div>
                     </div>
-                  ))}
+                  )})}
                   
                   {filteredItems.length === 0 && activeCategory !== '🔥 เมนูขายดี' && (
                     <div className="col-span-2 py-20 text-center flex flex-col items-center gap-4">
@@ -828,14 +875,23 @@ export default function App() {
                       <div key={category} className="space-y-3">
                         <h4 className="font-bold text-lg text-[#3D2C1E] border-b-2 border-[#A67C52]/20 pb-2 ml-1">{category}</h4>
                         {itemsInCategory.map((item, idx) => (
-                          <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                          <div 
+                            key={item.id} 
+                            draggable
+                            onDragStart={(e) => { dragItem.current = idx; e.currentTarget.classList.add('opacity-50', 'scale-95'); }}
+                            onDragEnter={(e) => dragOverItem.current = idx}
+                            onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-50', 'scale-95'); handleSortDrop(itemsInCategory); }}
+                            onDragOver={(e) => e.preventDefault()}
+                            className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
+                          >
                             <div className="flex items-center gap-3">
-                              {/* ปุ่มเลื่อนลำดับขึ้น-ลง */}
-                              <div className="flex flex-col gap-1">
-                                <button onClick={() => handleMoveMenu(item, 'up', itemsInCategory)} disabled={idx === 0} className={`p-1 rounded-md transition-all ${idx === 0 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowUp size={16}/></button>
-                                <button onClick={() => handleMoveMenu(item, 'down', itemsInCategory)} disabled={idx === itemsInCategory.length - 1} className={`p-1 rounded-md transition-all ${idx === itemsInCategory.length - 1 ? 'text-gray-100' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:scale-90'}`}><ArrowDown size={16}/></button>
+                              {/* Icon สำหรับบอกว่าลากได้ */}
+                              <div className="text-gray-300 flex flex-col items-center justify-center px-1">
+                                <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
                               </div>
-                              <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
+                              <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
                               <div>
                                  <p className="font-bold text-sm text-[#3D2C1E] flex items-center gap-1 flex-wrap">
                                    {item.name} 

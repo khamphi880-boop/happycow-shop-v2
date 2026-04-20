@@ -111,6 +111,7 @@ export default function App() {
   // DnD State สำหรับจัดการการลากวางเมนู
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
+  const editFormRef = useRef(null); // Ref สำหรับให้เลื่อนหน้าจอไปที่ฟอร์มแก้ไข
 
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
@@ -235,6 +236,26 @@ export default function App() {
     dragOverItem.current = null;
   };
 
+  // ฟังก์ชันเลื่อนลูกศรขึ้นลง (สำหรับมือถือที่ไม่รองรับลากวาง)
+  const handleMoveMenu = async (item, direction, itemsInCategory) => {
+    const currentIndex = itemsInCategory.findIndex(i => i.id === item.id);
+    if (direction === 'up' && currentIndex > 0) {
+      const prevItem = itemsInCategory[currentIndex - 1];
+      const currentOrder = item.sortOrder || item.createdAt || Date.now();
+      let prevOrder = prevItem.sortOrder || prevItem.createdAt || (Date.now() - 1000);
+      if (currentOrder === prevOrder) prevOrder -= 1;
+      await updateDoc(doc(db, 'menus', item.id), { sortOrder: prevOrder });
+      await updateDoc(doc(db, 'menus', prevItem.id), { sortOrder: currentOrder });
+    } else if (direction === 'down' && currentIndex < itemsInCategory.length - 1) {
+      const nextItem = itemsInCategory[currentIndex + 1];
+      const currentOrder = item.sortOrder || item.createdAt || Date.now();
+      let nextOrder = nextItem.sortOrder || nextItem.createdAt || (Date.now() + 1000);
+      if (currentOrder === nextOrder) nextOrder += 1;
+      await updateDoc(doc(db, 'menus', item.id), { sortOrder: nextOrder });
+      await updateDoc(doc(db, 'menus', nextItem.id), { sortOrder: currentOrder });
+    }
+  };
+
   const handleAddTopping = async () => {
     if (!newTopping.name || !newTopping.price) return alert('กรุณากรอกข้อมูลท็อปปิ้งให้ครบถ้วนครับ');
     try {
@@ -285,12 +306,29 @@ export default function App() {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
     let daily = 0, monthly = 0, yearly = 0;
+    
+    // คำนวณรายรับย้อนหลัง 7 วัน
+    const last7DaysMap = {};
+    for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7DaysMap[d.toLocaleDateString('th-TH')] = 0;
+    }
+
     orders.filter(o => o.status === 'completed').forEach(o => {
       if (o.timestamp >= startOfDay) daily += o.total;
       if (o.timestamp >= startOfMonth) monthly += o.total;
       if (o.timestamp >= startOfYear) yearly += o.total;
+      
+      const oDate = new Date(o.timestamp).toLocaleDateString('th-TH');
+      if(last7DaysMap[oDate] !== undefined) {
+         last7DaysMap[oDate] += o.total;
+      }
     });
-    return { daily, monthly, yearly };
+    
+    const dailyHistory = Object.keys(last7DaysMap).map(date => ({ date, total: last7DaysMap[date] }));
+
+    return { daily, monthly, yearly, dailyHistory };
   };
 
   const exportToCSV = () => {
@@ -717,6 +755,19 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* สรุปรายรับรายวัน */}
+                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm mt-4">
+                   <h3 className="font-bold text-sm text-[#3D2C1E] mb-4 border-b border-gray-50 pb-3 flex items-center gap-2"><Clock size={16}/> สรุปรายรับรายวัน (7 วันล่าสุด)</h3>
+                   <div className="space-y-3">
+                      {revData.dailyHistory.map((d, idx) => (
+                         <div key={idx} className="flex justify-between items-center text-sm">
+                            <span className={idx === 0 ? "font-bold text-[#A67C52]" : "text-gray-500 font-bold"}>{idx === 0 ? `วันนี้ (${d.date})` : d.date}</span>
+                            <span className={`font-bold ${idx === 0 ? "text-[#A67C52]" : "text-[#3D2C1E]"}`}>฿{d.total.toLocaleString()}</span>
+                         </div>
+                      ))}
+                   </div>
+                </div>
+
                 <div className="pt-4">
                   <button onClick={exportToCSV} className="w-full bg-[#0F9D58] text-white py-5 rounded-[2rem] font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                     <Download size={18} /> Export บัญชีรายรับ (CSV)
@@ -770,7 +821,7 @@ export default function App() {
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
                 {/* ฟอร์มเพิ่ม/แก้ไขเมนูของแอดมิน */}
-                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
+                <div ref={editFormRef} className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative scroll-mt-24">
                   <h3 className="font-bold text-sm text-[#A67C52] uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
                   <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
                   
@@ -885,11 +936,15 @@ export default function App() {
                             className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
                           >
                             <div className="flex items-center gap-3">
-                              {/* Icon สำหรับบอกว่าลากได้ */}
-                              <div className="text-gray-300 flex flex-col items-center justify-center px-1">
-                                <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
-                                <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
-                                <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+                              {/* Icon สำหรับบอกว่าลากได้ (Desktop) และ ปุ่มลูกศร (Mobile) */}
+                              <div className="flex flex-col items-center gap-1 z-10">
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0} className={`p-1.5 rounded-lg transition-all ${idx === 0 ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
+                                <div className="text-gray-300 flex-col items-center justify-center px-1 hidden sm:flex">
+                                  <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                  <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                  <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+                                </div>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 ? 'text-gray-200' : 'text-[#A67C52] bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
                               </div>
                               <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
                               <div>
@@ -906,9 +961,13 @@ export default function App() {
                                  </div>
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => setEditingMenu(item)} className="p-3 text-blue-400 active:scale-90 transition-all"><Edit size={18}/></button>
-                              <button onClick={() => handleDeleteMenu(item.id)} className="p-3 text-red-300 active:scale-90 transition-all"><Trash2 size={18}/></button>
+                            <div className="flex gap-2 z-10">
+                              <button type="button" onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setEditingMenu(item); 
+                                setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); 
+                              }} className="p-3 text-blue-400 active:scale-90 transition-all bg-blue-50 rounded-xl"><Edit size={16}/></button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-3 text-red-400 active:scale-90 transition-all bg-red-50 rounded-xl"><Trash2 size={16}/></button>
                             </div>
                           </div>
                         ))}

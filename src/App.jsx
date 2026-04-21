@@ -22,13 +22,14 @@ const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
 
 // --- Theme Configuration ---
 const THEMES = {
-  default: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: 'ปกติ (มินิมอล)' },
+  default: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: 'ปกติ (มินิมอล)', icons: [] },
   christmas: { bg: '#f0fdf4', primary: '#166534', accent: '#dc2626', name: '🎄 คริสต์มาส', icons: ['❄️', '⛄', '🎁', '🦌'] },
   valentine: { bg: '#fdf2f8', primary: '#831843', accent: '#db2777', name: '💖 วาเลนไทน์', icons: ['💖', '💕', '🌹', '🥰'] },
   songkran: { bg: '#e0f2fe', primary: '#0369a1', accent: '#0ea5e9', name: '💦 สงกรานต์', icons: ['💦', '🔫', '🌊', '🌴'] },
   halloween: { bg: '#fffbeb', primary: '#451a03', accent: '#ea580c', name: '🎃 ฮาโลวีน', icons: ['🎃', '👻', '🦇', '🕸️'] },
   newyear: { bg: '#f8fafc', primary: '#0f172a', accent: '#ca8a04', name: '🎆 ปีใหม่', icons: ['🎆', '✨', '🎉', '🥂'] },
   loykrathong: { bg: '#f5f3ff', primary: '#2e1065', accent: '#7c3aed', name: '🌕 ลอยกระทง', icons: ['🌕', '🕯️', '🌸', '✨'] },
+  custom: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: '🎨 อัปโหลดเอง', icons: [] },
 };
 
 // --- ฟังก์ชันบีบอัดรูปภาพ ---
@@ -95,9 +96,10 @@ export default function App() {
   const [isDelivering, setIsDelivering] = useState(false);
   
   // Store Settings State
-  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default' });
+  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
+  const [editCustomBgImage, setEditCustomBgImage] = useState('');
   
   // Menu & Topping Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false });
@@ -170,11 +172,15 @@ export default function App() {
     onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStoreSettings({ ...data, isStoreOpen: data.isStoreOpen !== false, theme: data.theme || 'default' });
-        setEditPromptPay(data.promptPayNo || '0812345678'); setEditQrCodeImage(data.qrCodeImage || '');
+        setStoreSettings({ ...data, isStoreOpen: data.isStoreOpen !== false, theme: data.theme || 'default', customBgImage: data.customBgImage || '' });
+        setEditPromptPay(data.promptPayNo || '0812345678'); 
+        setEditQrCodeImage(data.qrCodeImage || '');
+        setEditCustomBgImage(data.customBgImage || '');
       } else {
-        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default' });
-        setEditPromptPay('0812345678'); setEditQrCodeImage('');
+        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '' });
+        setEditPromptPay('0812345678'); 
+        setEditQrCodeImage('');
+        setEditCustomBgImage('');
       }
     });
 
@@ -444,9 +450,18 @@ export default function App() {
   const currentThemeData = THEMES[storeSettings.theme] || THEMES.default;
   const cartTotal = cart.reduce((s,i)=>s+(i.price*i.qty),0);
 
+  // ตั้งค่า Style หลักให้รองรับรูปพื้นหลังคัสตอม
+  const mainContainerStyle = {
+    backgroundColor: currentThemeData.bg,
+    backgroundImage: storeSettings.theme === 'custom' && storeSettings.customBgImage ? `url(${storeSettings.customBgImage})` : 'none',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed'
+  };
+
   return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col font-sans relative overflow-hidden transition-colors duration-500" style={{ backgroundColor: currentThemeData.bg }}>
-      <audio id="orderNotification" ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+    <div className="max-w-md mx-auto min-h-screen flex flex-col font-sans relative overflow-hidden transition-colors duration-500" style={mainContainerStyle}>
+      <audio id="orderNotification" ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2854/2854-preview.mp3" preload="auto"></audio>
       
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&display=swap');
@@ -1149,7 +1164,7 @@ export default function App() {
                 
                 {/* --- ธีมเทศกาล (ใหม่) --- */}
                 <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[2.5rem] border-2 border-dashed border-indigo-200 space-y-4 shadow-inner relative overflow-hidden">
-                  <h3 className="font-bold text-sm text-indigo-700 uppercase tracking-widest text-center flex items-center justify-center gap-2"><Palette size={16}/> เลือกธีมร้านค้า (เทศกาล)</h3>
+                  <h3 className="font-bold text-sm text-indigo-700 uppercase tracking-widest text-center flex items-center justify-center gap-2"><Palette size={16}/> เลือกธีมร้านค้า</h3>
                   <div className="grid grid-cols-2 gap-3 pt-2">
                      {Object.entries(THEMES).map(([key, theme]) => (
                         <button key={key} onClick={() => updateTheme(key)} className={`py-3 px-2 rounded-2xl font-bold text-[11px] shadow-sm transition-all border-2 flex items-center justify-center gap-1 ${storeSettings.theme === key ? 'border-indigo-500 bg-indigo-600 text-white scale-105 shadow-md' : 'border-white bg-white text-gray-600 hover:border-indigo-200'}`}>
@@ -1157,7 +1172,39 @@ export default function App() {
                         </button>
                      ))}
                   </div>
-                  <p className="text-[10px] text-center text-indigo-400 mt-2">* เปลี่ยนธีมแล้วสีพื้นหลังและสีปุ่มของร้านจะเปลี่ยนตามทันทีครับ</p>
+                  
+                  {/* --- ส่วนอัปโหลดรูปร้านเอง (จะโชว์เมื่อเลือกธีมคัสตอม) --- */}
+                  {storeSettings.theme === 'custom' && (
+                     <div className="mt-4 p-5 bg-white/80 backdrop-blur-sm rounded-2xl border border-indigo-100 shadow-sm animate-in fade-in slide-in-from-top-2">
+                        <label className="text-[11px] font-bold text-indigo-900 mb-3 block text-center">🖼️ อัปโหลดรูปพื้นหลังร้าน</label>
+                        <div className="flex flex-col gap-3">
+                           <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-200 text-indigo-500 py-4 px-4 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-2 shadow-sm hover:bg-indigo-50 transition-all">
+                             <Upload size={20}/> {editCustomBgImage ? 'คลิกเพื่อเปลี่ยนรูปพื้นหลัง' : 'คลิกเลือกรูปภาพ'}
+                             <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                               const file = e.target.files[0];
+                               if(file) {
+                                  // ปรับให้ความละเอียดสูงขึ้นเพื่อใช้เป็นพื้นหลัง (1200px)
+                                  const compressedImage = await compressImage(file, 1200, 1200, 0.8); 
+                                  setEditCustomBgImage(compressedImage);
+                               }
+                             }} />
+                           </label>
+                           {editCustomBgImage && <img src={editCustomBgImage} className="w-full h-32 object-cover rounded-xl shadow-sm border border-gray-100" alt="Bg Preview" />}
+                           {editCustomBgImage && (
+                              <button onClick={async () => {
+                                 try { 
+                                    await setDoc(doc(db, 'settings', 'store'), { customBgImage: editCustomBgImage }, { merge: true }); 
+                                    alert('บันทึกรูปพื้นหลังสำเร็จ! 🎨 ลูกค้าจะเห็นพื้นหลังนี้ทันทีครับ'); 
+                                 } catch(e) { alert(e.message); }
+                              }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all">
+                                 บันทึกรูปพื้นหลัง
+                              </button>
+                           )}
+                        </div>
+                     </div>
+                  )}
+
+                  <p className="text-[10px] text-center text-indigo-400 mt-2">* เปลี่ยนธีมแล้วสีพื้นหลังของร้านจะเปลี่ยนตามทันทีครับ</p>
                 </div>
                 
                 {/* --- ส่วนเปิดปิดร้าน --- */}

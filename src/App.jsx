@@ -81,6 +81,7 @@ export default function App() {
   const [slipImage, setSlipImage] = useState('');
   const [paymentMethod, setPaymentMethod] = useState(() => localStorage.getItem('happycow_paymentMethod') || 'promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false); // State ใหม่สำหรับตรวจสอบการยอมรับเงื่อนไข
   
   // Admin State
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -439,7 +440,7 @@ export default function App() {
       };
 
       await fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: lineProfile.userId, flexMessage }) });
-      setCart([]); setSlipImage(''); setAddress(''); setNote(''); setView('myOrders'); alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
+      setCart([]); setSlipImage(''); setAddress(''); setNote(''); setAcceptedTerms(false); setView('myOrders'); alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
   };
@@ -617,6 +618,20 @@ export default function App() {
               </div>
             )}
 
+            {/* --- เงื่อนไขการจัดส่ง (โชว์หน้าแรก) --- */}
+            {!searchQuery && (
+              <div className="mx-5 mb-2 mt-4 p-4 bg-orange-50 border border-orange-200 rounded-2xl shadow-sm relative overflow-hidden animate-in fade-in">
+                <div className="absolute top-0 left-0 w-1 h-full bg-orange-400"></div>
+                <h4 className="text-xs font-bold text-orange-600 mb-2 flex items-center gap-1"><AlertCircle size={14}/> เงื่อนไขการสั่งซื้อ (รบกวนอ่านก่อนนะคะ 💖)</h4>
+                <ul className="text-[10.5px] text-gray-700 space-y-1.5 pl-4 list-disc font-medium">
+                  <li>ส่งถึงหน้าห้อง <span className="font-bold text-orange-600">เฉพาะกรณีเข้าตึกได้</span> เท่านั้น</li>
+                  <li>หากเข้าตึกไม่ได้ / ฝนตก / ลิฟต์พัง ขออนุญาต <span className="font-bold text-orange-600">แขวนไว้ใต้ตึก</span></li>
+                  <li>ระยะเวลารอออร์เดอร์ประมาณ <span className="font-bold">20 นาที (+/-)</span></li>
+                  <li>ทางร้านรีบทำและจัดส่งตามคิว <span className="font-bold text-red-500">ขอความกรุณางดเร่งนะคะ 🙏</span></li>
+                </ul>
+              </div>
+            )}
+
             {/* --- หมวดหมู่ (ซ่อนตอนกำลังค้นหา) --- */}
             {!searchQuery && (
               <div className="flex gap-2 overflow-x-auto hide-scrollbar px-5 py-3 sticky top-[138px] z-[40] bg-[#F5EEDC]/95 backdrop-blur-sm">
@@ -750,8 +765,20 @@ export default function App() {
                   </div>
                 )}
                 
+                {/* --- Checkbox ยอมรับเงื่อนไข --- */}
+                <label className={`flex items-start gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer shadow-sm ${acceptedTerms ? 'border-green-400 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                  <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 w-5 h-5 accent-green-600 cursor-pointer flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className={`text-xs font-bold ${acceptedTerms ? 'text-green-700' : 'text-red-600'} mb-1`}>ฉันรับทราบและยอมรับเงื่อนไข</p>
+                    <ul className="text-[9.5px] text-gray-600 space-y-1 list-disc pl-3 font-medium">
+                      <li>ส่งหน้าห้องเฉพาะเข้าตึกได้ (เข้าไม่ได้/ฝนตก = <span className="font-bold">แขวนใต้ตึก</span>)</li>
+                      <li>รอออร์เดอร์ 20 นาที (+/-) / จัดส่งตามคิว <span className="text-red-500 font-bold">งดเร่ง</span></li>
+                    </ul>
+                  </div>
+                </label>
+                
                 {storeSettings.isStoreOpen !== false ? (
-                  <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage)} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) ? 'bg-[#A67C52] text-white' : 'bg-gray-100 text-gray-300'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
+                  <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && !slipImage) || !acceptedTerms} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 ${ (paymentMethod === 'cash' || slipImage) && acceptedTerms ? 'bg-[#A67C52] text-white' : 'bg-gray-200 text-gray-400'}`}>{isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cart.reduce((s,i)=>s+(i.price*i.qty),0)}`}</button>
                 ) : (
                   <button disabled className="w-full py-5 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg shadow-xl cursor-not-allowed">ร้านปิดรับออเดอร์ชั่วคราว</button>
                 )}

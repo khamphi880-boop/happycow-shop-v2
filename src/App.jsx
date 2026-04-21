@@ -17,7 +17,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const LIFF_ID = "2009828681-C1cb8QC3"; 
 
-const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'สมูทตี้โยเกิร์ต', 'วิปครีม/ครีมชีส'];
+const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'สมูทตี้โยเกิร์ต', 'ครีมและครีมชีส'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%', '120%'];
 
 // --- Theme Configuration ---
@@ -125,6 +125,12 @@ export default function App() {
   const editFormRef = useRef(null); 
   const audioRef = useRef(null);
   const previousOrderCount = useRef(0);
+
+  // --- Helper Function สำหรับคำนวณราคาปั่น ---
+  const getAddedBlendPrice = (item) => {
+    if (item.category === 'สมูทตี้โยเกิร์ต' || item.category === 'ผลไม้และสมูทตี้') return 0;
+    return (item.blendPrice !== undefined && item.blendPrice !== null && item.blendPrice !== '') ? Number(item.blendPrice) : 5;
+  };
 
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
@@ -447,7 +453,11 @@ export default function App() {
   const displayedItems = React.useMemo(() => {
     if (searchQuery) return menuItems.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
     if (activeCategory === '🔥 เมนูขายดี') return bestSellers;
-    return menuItems.filter(i => i.category === activeCategory).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
+    return menuItems.filter(i => {
+       if (activeCategory === 'สมูทตี้โยเกิร์ต') return i.category === 'สมูทตี้โยเกิร์ต' || i.category === 'ผลไม้และสมูทตี้';
+       if (activeCategory === 'ครีมและครีมชีส') return i.category === 'ครีมและครีมชีส' || i.category === 'เมนูพิเศษ';
+       return i.category === activeCategory;
+    }).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
   }, [activeCategory, menuItems, bestSellers, searchQuery]);
 
   const promotedItems = React.useMemo(() => menuItems.filter(i => i.isPromoted).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0)), [menuItems]);
@@ -676,7 +686,7 @@ export default function App() {
               {isLoading ? <div className="p-20 text-center opacity-30 italic font-bold">กำลังเตรียมเมนูแสนอร่อย... 🐮</div> : (
                 <div className="grid grid-cols-2 gap-5">
                   {displayedItems.map((item, index) => {
-                    const isSpecial = item.category === 'เมนูพิเศษ';
+                    const isSpecial = item.category === 'ครีมและครีมชีส' || item.category === 'เมนูพิเศษ';
                     const isBestSeller = !searchQuery && activeCategory === '🔥 เมนูขายดี';
                     return (
                     <div key={item.id} onClick={() => openOptionModal(item)} className={`rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${isSpecial ? 'special-bg glow-effect border border-orange-100' : 'bg-white/90 backdrop-blur-sm border border-white/50'} ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:-translate-y-1 active:scale-95'}`}>
@@ -1072,7 +1082,9 @@ export default function App() {
                     </label>
                   </div>
 
-                  {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && (
+                  {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && 
+                   (editingMenu ? editingMenu.category : newMenu.category) !== 'สมูทตี้โยเกิร์ต' && 
+                   (editingMenu ? editingMenu.category : newMenu.category) !== 'ผลไม้และสมูทตี้' && (
                     <div className="mt-2 text-left">
                       <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
                       <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] transition-all bg-white border border-transparent" value={editingMenu ? editingMenu.blendPrice : newMenu.blendPrice} onChange={e => editingMenu ? setEditingMenu({...editingMenu, blendPrice: e.target.value}) : setNewMenu({...newMenu, blendPrice: e.target.value})} />
@@ -1118,7 +1130,11 @@ export default function App() {
                 <div className="space-y-8">
                   {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(category => {
                     let itemsInCategory = menuItems
-                      .filter(item => item.category === category)
+                      .filter(item => {
+                         if (category === 'สมูทตี้โยเกิร์ต') return item.category === 'สมูทตี้โยเกิร์ต' || item.category === 'ผลไม้และสมูทตี้';
+                         if (category === 'ครีมและครีมชีส') return item.category === 'ครีมและครีมชีส' || item.category === 'เมนูพิเศษ';
+                         return item.category === category;
+                      })
                       .sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0));
 
                     if (adminSearchQuery) itemsInCategory = itemsInCategory.filter(item => item.name.toLowerCase().includes(adminSearchQuery.toLowerCase()));
@@ -1337,13 +1353,13 @@ export default function App() {
               {optionModalItem.isOnlyBlend ? (
                 <div className="grid grid-cols-1 gap-5">
                    <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all border-blue-400 bg-blue-50 text-blue-600 shadow-sm`}>
-                     <Zap size={32}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {optionModalItem.blendPrice ? `(+฿${optionModalItem.blendPrice})` : ''}</span>
+                     <Zap size={32}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span>
                    </button>
                 </div>
               ) : optionModalItem.allowBlend !== false ? (
                 <div className="grid grid-cols-2 gap-5">
                    <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
-                   <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Zap size={32}/><span className="text-xs uppercase">ปั่น (+฿{optionModalItem.blendPrice || 5})</span></button>
+                   <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Zap size={32}/><span className="text-xs uppercase">ปั่น {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span></button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-5">
@@ -1356,7 +1372,7 @@ export default function App() {
               <button onClick={() => {
                   const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
                   const isItemBlended = optionModalItem.isOnlyBlend || tempOptions.isBlended;
-                  const finalP = optionModalItem.price + (isItemBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
+                  const finalP = optionModalItem.price + (isItemBlended ? getAddedBlendPrice(optionModalItem) : 0) + toppingsPrice;
                   const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
                   const beanStr = tempOptions.bean ? `-${tempOptions.bean}` : '';
                   const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}${beanStr}`;
@@ -1368,7 +1384,7 @@ export default function App() {
                   });
                   setOptionModalItem(null);
                 }} className="w-full py-6 bg-primary text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-xl transition-all sticky bottom-0 hover:opacity-90">
-                  <Plus size={24}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + ((optionModalItem.isOnlyBlend || tempOptions.isBlended) ? (optionModalItem.blendPrice || 5) : 0) + (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0)}
+                  <Plus size={24}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + ((optionModalItem.isOnlyBlend || tempOptions.isBlended) ? getAddedBlendPrice(optionModalItem) : 0) + (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0)}
               </button>
             ) : (
               <button disabled className="w-full py-6 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg flex items-center justify-center gap-3 shadow-xl sticky bottom-0 cursor-not-allowed">

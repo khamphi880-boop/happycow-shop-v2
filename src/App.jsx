@@ -193,15 +193,28 @@ export default function App() {
     });
   }, []);
 
-  // --- Sound Notification Logic ---
+  // --- Sound Notification Logic (กริ๊ง 2 ครั้ง) ---
+  const playNotificationSound = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().then(() => {
+        // เล่นครั้งที่ 2 หลังจากกริ๊งแรก (หน่วงเวลา 800ms ให้เป็นจังหวะพอดี)
+        setTimeout(() => {
+          if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play().catch(e => console.log('Autoplay blocked', e));
+          }
+        }, 800);
+      }).catch(e => console.log('Autoplay blocked by browser policy', e));
+    }
+  };
+
   useEffect(() => {
     if (orders.length > previousOrderCount.current && previousOrderCount.current !== 0) {
       const newOrders = orders.slice(0, orders.length - previousOrderCount.current);
       const hasNewPending = newOrders.some(o => o.status === 'pending');
       if (hasNewPending && view === 'admin') {
-        if (audioRef.current) {
-          audioRef.current.play().catch(e => console.log('Autoplay blocked by browser policy', e));
-        }
+        playNotificationSound();
       }
     }
     previousOrderCount.current = orders.length;
@@ -894,7 +907,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-2xl font-serif font-bold text-primary">ระบบแอดมิน</h2>
                {/* ปุ่มทดสอบเสียงแจ้งเตือน */}
-               <button onClick={() => { if(audioRef.current) audioRef.current.play(); }} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95"><BellRing size={12}/> เปิด/เทสเสียงแจ้งเตือน</button>
+               <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95"><BellRing size={12}/> เปิด/เทสเสียงแจ้งเตือน</button>
             </div>
             
             <div className="flex gap-1 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">

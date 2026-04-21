@@ -18,7 +18,7 @@ const db = getFirestore(app);
 const LIFF_ID = "2009828681-C1cb8QC3"; 
 
 const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'ผลไม้และสมูทตี้', 'เมนูพิเศษ'];
-const SWEETNESS = ['0%', '25%', '50%', '75%', '100%'];
+const SWEETNESS = ['0%', '25%', '50%', '75%', '100%', '120%'];
 
 // --- Theme Configuration ---
 const THEMES = {
@@ -369,7 +369,13 @@ export default function App() {
   const openOptionModal = (item) => {
     if (item.isSoldOut) return;
     setOptionModalItem(item);
-    setTempOptions({ sweetness: '100%', isBlended: item.isOnlyBlend ? true : false, addPearl: item.hasFreePearl, selectedToppings: [] });
+    setTempOptions({ 
+      sweetness: '100%', 
+      isBlended: item.isOnlyBlend ? true : false, 
+      addPearl: item.hasFreePearl, 
+      selectedToppings: [],
+      bean: item.category === 'กาแฟ' ? 'คั่วเข้ม' : null // ตั้งค่าเริ่มต้นเป็นคั่วเข้มสำหรับเมนูกาแฟ
+    });
     if(searchQuery) handleSearchSubmit(searchQuery);
   };
 
@@ -401,7 +407,7 @@ export default function App() {
             type: "box", layout: "vertical", margin: "sm", 
             contents: [
               { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
+              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.bean ? ` • ${i.bean}` : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
             ]
           };
         }),
@@ -731,7 +737,7 @@ export default function App() {
                    <div className="flex-1 font-bold text-sm text-primary">
                      {i.qty}x {i.name} <br/>
                      <span className="text-gray-400 text-[10px] uppercase">
-                       ({getBlendText(i)} • หวาน {i.sweetness}{i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
+                       ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}{i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
                        {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
                      </span>
                    </div>
@@ -873,7 +879,7 @@ export default function App() {
                           
                           <div className="space-y-1">{(o.items || []).map((item, idx) => (
                               <p key={idx} className="text-[11px] font-bold text-gray-500">
-                                {item.qty}x {item.name} ({getBlendText(item)})
+                                {item.qty}x {item.name} ({getBlendText(item)} • หวาน {item.sweetness}{item.bean ? ` • ${item.bean}` : ''})
                                 {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
                               </p>
                           ))}</div>
@@ -974,7 +980,7 @@ export default function App() {
                       
                       <div className="space-y-1 border-t border-gray-100 pt-3 mb-3">{(o.items || []).map((i, idx) => (
                           <div key={idx} className="text-xs text-gray-600 flex justify-between font-medium">
-                            <span>{i.qty}x {i.name} ({getBlendText(i)}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
+                            <span>{i.qty}x {i.name} ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
                             <span className="font-bold">฿{i.price * i.qty}</span>
                           </div>
                       ))}</div>
@@ -1272,10 +1278,21 @@ export default function App() {
             <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-primary">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600"><X/></button></div>
             <div className="space-y-8">
               <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
-                <div className="grid grid-cols-5 gap-2">{SWEETNESS.map(l => (
+                <div className="grid grid-cols-3 gap-2">{SWEETNESS.map(l => (
                     <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>{l}</button>
                 ))}</div>
               </div>
+
+              {/* ส่วนเลือกระดับการคั่ว (เฉพาะเมนูกาแฟ) */}
+              {optionModalItem.category === 'กาแฟ' && (
+                <div>
+                   <label className="text-[10px] font-bold block mb-4 text-[#5c3a21] uppercase tracking-widest flex items-center gap-1"><Coffee size={14} fill="currentColor"/> เลือกระดับการคั่วเมล็ดกาแฟ</label>
+                   <div className="grid grid-cols-2 gap-3">
+                     <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วกลาง'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วกลาง' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วกลาง<br/><span className="text-[9px] font-normal">หอมนุ่ม ละมุน</span></button>
+                     <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วเข้ม'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วเข้ม' ? 'bg-[#3D2C1E] text-white border-[#3D2C1E] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วเข้ม<br/><span className="text-[9px] font-normal">เข้มข้น ถึงใจ</span></button>
+                   </div>
+                </div>
+              )}
 
               {optionModalItem.hasFreePearl && (
                 <div>
@@ -1341,7 +1358,8 @@ export default function App() {
                   const isItemBlended = optionModalItem.isOnlyBlend || tempOptions.isBlended;
                   const finalP = optionModalItem.price + (isItemBlended ? (optionModalItem.blendPrice || 5) : 0) + toppingsPrice;
                   const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
-                  const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}`;
+                  const beanStr = tempOptions.bean ? `-${tempOptions.bean}` : '';
+                  const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}${beanStr}`;
                   
                   setCart(prev => {
                     const ex = prev.find(i => i.cartId === cartId);

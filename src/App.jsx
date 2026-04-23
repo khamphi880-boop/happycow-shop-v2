@@ -102,7 +102,7 @@ export default function App() {
   const [editCustomBgImage, setEditCustomBgImage] = useState('');
   
   // Menu & Topping Management
-  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false });
+  const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
 
@@ -234,11 +234,11 @@ export default function App() {
     if (data.category === '🔥 เมนูขายดี') return alert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
     try {
       if (editingMenu) {
-        await updateDoc(doc(db, 'menus', editingMenu.id), { ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false, isOnlyBlend: editingMenu.isOnlyBlend || false, allowBlend: editingMenu.isOnlyBlend ? true : (editingMenu.allowBlend !== false), isPromoted: editingMenu.isPromoted || false, isSoldOut: editingMenu.isSoldOut || false });
+        await updateDoc(doc(db, 'menus', editingMenu.id), { ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false, isOnlyBlend: editingMenu.isOnlyBlend || false, allowBlend: editingMenu.isOnlyBlend ? true : (editingMenu.allowBlend !== false), isPromoted: editingMenu.isPromoted || false, isSoldOut: editingMenu.isSoldOut || false, hasTeaType: editingMenu.hasTeaType || false });
         alert('แก้ไขเมนูสำเร็จ! ✨'); setEditingMenu(null);
       } else {
-        await addDoc(collection(db, 'menus'), { ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false, isOnlyBlend: newMenu.isOnlyBlend || false, allowBlend: newMenu.isOnlyBlend ? true : (newMenu.allowBlend !== false), isPromoted: newMenu.isPromoted || false, isSoldOut: newMenu.isSoldOut || false, createdAt: Date.now(), sortOrder: Date.now() });
-        alert('เพิ่มเมนูสำเร็จ! 🐮'); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false });
+        await addDoc(collection(db, 'menus'), { ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false, isOnlyBlend: newMenu.isOnlyBlend || false, allowBlend: newMenu.isOnlyBlend ? true : (newMenu.allowBlend !== false), isPromoted: newMenu.isPromoted || false, isSoldOut: newMenu.isSoldOut || false, hasTeaType: newMenu.hasTeaType || false, createdAt: Date.now(), sortOrder: Date.now() });
+        alert('เพิ่มเมนูสำเร็จ! 🐮'); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
       }
     } catch (e) { alert(e.message); }
   };
@@ -383,6 +383,7 @@ export default function App() {
       addPearl: item.hasFreePearl, 
       selectedToppings: [],
       bean: item.category === 'กาแฟ' ? 'คั่วเข้ม' : null,
+      teaType: item.hasTeaType ? 'มัทฉะ' : null,
       addShot: false
     });
     if(searchQuery) handleSearchSubmit(searchQuery);
@@ -416,7 +417,7 @@ export default function App() {
             type: "box", layout: "vertical", margin: "sm", 
             contents: [
               { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.bean ? ` • ${i.bean}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
+              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.bean ? ` • ${i.bean}` : ''}${i.teaType ? ` • ${i.teaType}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
             ]
           };
         }),
@@ -766,7 +767,7 @@ export default function App() {
                    <div className="flex-1 font-bold text-sm text-primary">
                      {i.qty}x {i.name} <br/>
                      <span className="text-gray-400 text-[10px] uppercase">
-                       ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
+                       ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}${i.teaType ? ` • ${i.teaType}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
                        {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
                      </span>
                    </div>
@@ -908,7 +909,7 @@ export default function App() {
                           
                           <div className="space-y-1">{(o.items || []).map((item, idx) => (
                               <p key={idx} className="text-[11px] font-bold text-gray-500">
-                                {item.qty}x {item.name} ({getBlendText(item)} • หวาน {item.sweetness}{item.bean ? ` • ${item.bean}` : ''}${item.addShot ? ' • เพิ่มช็อต' : ''})
+                                {item.qty}x {item.name} ({getBlendText(item)} • หวาน {item.sweetness}{item.bean ? ` • ${item.bean}` : ''}${item.teaType ? ` • ${item.teaType}` : ''}${item.addShot ? ' • เพิ่มช็อต' : ''})
                                 {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
                               </p>
                           ))}</div>
@@ -1009,7 +1010,7 @@ export default function App() {
                       
                       <div className="space-y-1 border-t border-gray-100 pt-3 mb-3">{(o.items || []).map((i, idx) => (
                           <div key={idx} className="text-xs text-gray-600 flex justify-between font-medium">
-                            <span>{i.qty}x {i.name} ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
+                            <span>{i.qty}x {i.name} ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}${i.teaType ? ` • ${i.teaType}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
                             <span className="font-bold">฿{i.price * i.qty}</span>
                           </div>
                       ))}</div>
@@ -1099,6 +1100,13 @@ export default function App() {
                       <input type="checkbox" checked={editingMenu ? editingMenu.isPromoted : newMenu.isPromoted} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isPromoted: e.target.checked}) : setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500 cursor-pointer" />
                       <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์เป็นแบนเนอร์สไลด์)</span>
                     </label>
+
+                    {(editingMenu ? editingMenu.category : newMenu.category) === 'มัทฉะ' && (
+                      <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-green-50 rounded-2xl shadow-sm border border-green-100 cursor-pointer transition-all hover:bg-green-100">
+                        <input type="checkbox" checked={editingMenu ? editingMenu.hasTeaType : newMenu.hasTeaType} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasTeaType: e.target.checked}) : setNewMenu({...newMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-green-600 cursor-pointer" />
+                        <span className="text-[11px] font-bold text-green-700 flex items-center gap-1">🍵 ให้ลูกค้าเลือกผงชา (มัทฉะ / โฮจิฉะ) ได้</span>
+                      </label>
+                    )}
                   </div>
 
                   {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && 
@@ -1193,6 +1201,7 @@ export default function App() {
                                    {item.isOnlyBlend && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-sm">เฉพาะปั่น</span>}
                                    {item.allowBlend === false && !item.isOnlyBlend && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
                                    {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
+                                   {item.hasTeaType && <p className="text-[9px] text-green-600 bg-green-50 px-1 rounded-sm border border-green-200">เลือกผงชาได้</p>}
                                  </div>
                               </div>
                             </div>
@@ -1355,6 +1364,19 @@ export default function App() {
                 </div>
               )}
 
+              {/* ส่วนเลือกผงชา (เฉพาะเมนูที่มีให้เลือกรสชาติมัทฉะ) */}
+              {optionModalItem.hasTeaType && (
+                <div className="space-y-4">
+                   <div>
+                     <label className="text-[10px] font-bold block mb-4 text-[#4a5d23] uppercase tracking-widest flex items-center gap-1">🍵 เลือกรสชาติผงชา</label>
+                     <div className="grid grid-cols-2 gap-3">
+                       <button onClick={() => setTempOptions({...tempOptions, teaType: 'มัทฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'มัทฉะ' ? 'bg-[#4a5d23] text-white border-[#4a5d23] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>มัทฉะ<br/><span className="text-[9px] font-normal">หอมเข้มข้น ดั้งเดิม</span></button>
+                       <button onClick={() => setTempOptions({...tempOptions, teaType: 'โฮจิฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'โฮจิฉะ' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>โฮจิฉะ<br/><span className="text-[9px] font-normal">หอมคั่ว ละมุน</span></button>
+                     </div>
+                   </div>
+                </div>
+              )}
+
               {optionModalItem.hasFreePearl && (
                 <div>
                    <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> แถมมุกฟรี!</label>
@@ -1422,8 +1444,9 @@ export default function App() {
                   const finalP = optionModalItem.price + (isItemBlended ? getAddedBlendPrice(optionModalItem) : 0) + toppingsPrice + shotPrice;
                   const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
                   const beanStr = tempOptions.bean ? `-${tempOptions.bean}` : '';
+                  const teaStr = tempOptions.teaType ? `-${tempOptions.teaType}` : '';
                   const shotStr = tempOptions.addShot ? `-addShot` : '';
-                  const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}${beanStr}${shotStr}`;
+                  const cartId = `${optionModalItem.id}-${tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}${beanStr}${teaStr}${shotStr}`;
                   
                   setCart(prev => {
                     const ex = prev.find(i => i.cartId === cartId);

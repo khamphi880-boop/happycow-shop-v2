@@ -96,10 +96,12 @@ export default function App() {
   const [isDelivering, setIsDelivering] = useState(false);
   
   // Store Settings State
-  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false });
+  const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false, notifyAdmin: false, adminLineId: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
   const [editCustomBgImage, setEditCustomBgImage] = useState('');
+  const [editNotifyAdmin, setEditNotifyAdmin] = useState(false);
+  const [editAdminLineId, setEditAdminLineId] = useState('');
   
   // Menu & Topping Management
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
@@ -150,6 +152,12 @@ export default function App() {
     localStorage.setItem('happycow_uid', cid);
     setLineProfile(prev => ({ ...prev, userId: cid }));
 
+    // เปิดหน้า Login แอดมินทันที ถ้ากดมาจากลิงก์แจ้งเตือน
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'admin') {
+       setShowAdminModal(true);
+    }
+
     const initializeLiff = () => {
       window.liff.init({ liffId: LIFF_ID }).then(() => {
         if (window.liff.isLoggedIn()) {
@@ -177,15 +185,19 @@ export default function App() {
     onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStoreSettings({ ...data, isStoreOpen: data.isStoreOpen !== false, theme: data.theme || 'default', customBgImage: data.customBgImage || '', isBlendOut: data.isBlendOut || false });
+        setStoreSettings({ ...data, isStoreOpen: data.isStoreOpen !== false, theme: data.theme || 'default', customBgImage: data.customBgImage || '', isBlendOut: data.isBlendOut || false, notifyAdmin: data.notifyAdmin || false, adminLineId: data.adminLineId || '' });
         setEditPromptPay(data.promptPayNo || '0812345678'); 
         setEditQrCodeImage(data.qrCodeImage || '');
         setEditCustomBgImage(data.customBgImage || '');
+        setEditNotifyAdmin(data.notifyAdmin || false);
+        setEditAdminLineId(data.adminLineId || '');
       } else {
-        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false });
+        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false, notifyAdmin: false, adminLineId: '' });
         setEditPromptPay('0812345678'); 
         setEditQrCodeImage('');
         setEditCustomBgImage('');
+        setEditNotifyAdmin(false);
+        setEditAdminLineId('');
       }
     });
 
@@ -440,6 +452,34 @@ export default function App() {
       };
 
       await fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: lineProfile.userId, flexMessage }) });
+      
+      // --- แจ้งเตือนแอดมิน (ถ้าเปิดตั้งค่าไว้) ---
+      if (storeSettings.notifyAdmin && storeSettings.adminLineId) {
+         const adminFlexMessage = {
+           type: "flex", altText: "🚨 มีออร์เดอร์ใหม่เข้า!",
+           contents: {
+             type: "bubble",
+             header: {
+               type: "box", layout: "vertical", backgroundColor: "#ef4444",
+               contents: [{ type: "text", text: "🚨 ออร์เดอร์ใหม่เข้าจ้า!", color: "#ffffff", weight: "bold", size: "md", align: "center" }]
+             },
+             body: {
+               type: "box", layout: "vertical", spacing: "md",
+               contents: [
+                 { type: "text", text: `ลูกค้า: ${lineProfile.displayName}`, weight: "bold", size: "sm", color: "#333333" },
+                 { type: "text", text: `ยอดรวม: ฿${total}`, size: "sm", weight: "bold", color: "#A67C52" },
+                 { type: "text", text: `การชำระเงิน: ${paymentMethod === 'promptpay' ? 'โอนเงิน (รอตรวจสลิป)' : 'เงินสด'}`, size: "xs", color: "#888888" },
+                 { type: "separator", margin: "md" },
+                 { type: "text", text: "กรุณากดปุ่มด้านล่างเพื่อเปิดระบบแอดมินและกดยอมรับออร์เดอร์นะคะ", wrap: true, size: "xxs", color: "#aaaaaa" },
+                 { type: "button", style: "primary", color: "#A67C52", margin: "md", action: { type: "uri", label: "📲 กดรับออร์เดอร์", uri: `https://liff.line.me/${LIFF_ID}?action=admin` } }
+               ]
+             }
+           }
+         };
+         // ส่งข้อความหาแอดมิน (ไม่ใช้ await เพื่อไม่ให้ลูกค้าต้องรอโหลด)
+         fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: storeSettings.adminLineId, flexMessage: adminFlexMessage }) }).catch(e => console.error(e));
+      }
+
       setCart([]); setSlipImage(''); setSlipStatus('idle'); setAddress(''); setNote(''); setAcceptedTerms(false); setView('myOrders'); alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
     } catch (e) { alert("Error: " + e.message); }
     setIsLoading(false);
@@ -1368,6 +1408,37 @@ export default function App() {
                     try { await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true }); alert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮'); } catch(e) { alert("Error: " + e.message); }
                   }} className="w-full bg-primary text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4 hover:opacity-90">
                     บันทึกการตั้งค่าร้าน
+                  </button>
+                </div>
+
+                {/* --- ส่วนตั้งค่าการแจ้งเตือนแอดมิน --- */}
+                <div className="bg-blue-50 p-6 rounded-[2.5rem] border-2 border-dashed border-blue-200 space-y-4 shadow-inner relative">
+                  <h3 className="font-bold text-sm text-blue-700 uppercase tracking-widest text-center flex items-center justify-center gap-2"><BellRing size={16}/> แจ้งเตือนออร์เดอร์ (LINE แอดมิน)</h3>
+                  
+                  <div className="mt-2">
+                    <label className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-50">
+                      <div>
+                        <p className="font-bold text-sm text-primary flex items-center gap-1">🔔 เปิดแจ้งเตือนผ่าน LINE</p>
+                        <p className="text-[10px] text-gray-500 mt-1">บอทจะทักไปบอกทันทีที่มีออร์เดอร์</p>
+                      </div>
+                      <input type="checkbox" checked={editNotifyAdmin} onChange={e => setEditNotifyAdmin(e.target.checked)} className="w-5 h-5 accent-blue-500 cursor-pointer" />
+                    </label>
+                  </div>
+
+                  <div className={`transition-all ${editNotifyAdmin ? 'opacity-100 h-auto' : 'opacity-40 h-auto pointer-events-none'}`}>
+                    <label className="text-[11px] text-gray-500 mb-2 block font-bold">LINE User ID ของแอดมิน</label>
+                    <div className="flex gap-2">
+                       <input type="text" placeholder="ระบบจะดึงให้อัตโนมัติ..." className="flex-1 p-4 rounded-2xl text-[10px] outline-none shadow-sm focus:ring-2 focus:ring-blue-400 border border-transparent transition-all bg-white text-gray-500" value={editAdminLineId} onChange={e => setEditAdminLineId(e.target.value)} readOnly />
+                       <button onClick={() => setEditAdminLineId(lineProfile.userId)} className="bg-blue-500 text-white px-3 rounded-2xl text-[10px] font-bold shadow-sm active:scale-95 whitespace-nowrap hover:bg-blue-600 transition-colors">ดึง LINE ID ของฉัน</button>
+                    </div>
+                    <p className="text-[9px] text-blue-600 font-bold mt-2 leading-relaxed bg-blue-100/50 p-2 rounded-lg border border-blue-100">* ให้คุณแอดมินเปิดระบบนี้จาก <b>มือถือเครื่องที่จะรับแจ้งเตือน</b> แล้วกดปุ่ม "ดึง LINE ID ของฉัน" จากนั้นกดบันทึกด้านล่างได้เลยครับ</p>
+                  </div>
+
+                  <button onClick={async () => {
+                    if (editNotifyAdmin && !editAdminLineId) return alert('กรุณากดดึง LINE ID ก่อนบันทึกครับ');
+                    try { await setDoc(doc(db, 'settings', 'store'), { notifyAdmin: editNotifyAdmin, adminLineId: editAdminLineId }, { merge: true }); alert('อัปเดตการแจ้งเตือนสำเร็จ! 🎉'); } catch(e) { alert("Error: " + e.message); }
+                  }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4 hover:opacity-90">
+                    บันทึกการแจ้งเตือน
                   </button>
                 </div>
               </div>

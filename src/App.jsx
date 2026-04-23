@@ -122,7 +122,6 @@ export default function App() {
   // Refs
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
-  const editFormRef = useRef(null); 
   const audioRef = useRef(null);
   const previousOrderCount = useRef(0);
 
@@ -204,7 +203,6 @@ export default function App() {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().then(() => {
-        // เล่นครั้งที่ 2 หลังจากกริ๊งแรก (หน่วงเวลา 800ms ให้เป็นจังหวะพอดี)
         setTimeout(() => {
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
@@ -228,18 +226,24 @@ export default function App() {
 
   const handleLineLogin = () => { if (window.liff && !window.liff.isLoggedIn()) window.liff.login(); };
 
-  const handleSaveMenu = async () => {
-    const data = editingMenu || newMenu;
-    if (!data.name || !data.price || !data.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
-    if (data.category === '🔥 เมนูขายดี') return alert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
+  // แยกฟังก์ชันบันทึกเมนูใหม่
+  const handleAddNewMenu = async () => {
+    if (!newMenu.name || !newMenu.price || !newMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
+    if (newMenu.category === '🔥 เมนูขายดี') return alert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
     try {
-      if (editingMenu) {
-        await updateDoc(doc(db, 'menus', editingMenu.id), { ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false, isOnlyBlend: editingMenu.isOnlyBlend || false, allowBlend: editingMenu.isOnlyBlend ? true : (editingMenu.allowBlend !== false), isPromoted: editingMenu.isPromoted || false, isSoldOut: editingMenu.isSoldOut || false, hasTeaType: editingMenu.hasTeaType || false });
-        alert('แก้ไขเมนูสำเร็จ! ✨'); setEditingMenu(null);
-      } else {
-        await addDoc(collection(db, 'menus'), { ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false, isOnlyBlend: newMenu.isOnlyBlend || false, allowBlend: newMenu.isOnlyBlend ? true : (newMenu.allowBlend !== false), isPromoted: newMenu.isPromoted || false, isSoldOut: newMenu.isSoldOut || false, hasTeaType: newMenu.hasTeaType || false, createdAt: Date.now(), sortOrder: Date.now() });
-        alert('เพิ่มเมนูสำเร็จ! 🐮'); setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
-      }
+      await addDoc(collection(db, 'menus'), { ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false, isOnlyBlend: newMenu.isOnlyBlend || false, allowBlend: newMenu.isOnlyBlend ? true : (newMenu.allowBlend !== false), isPromoted: newMenu.isPromoted || false, isSoldOut: newMenu.isSoldOut || false, hasTeaType: newMenu.hasTeaType || false, createdAt: Date.now(), sortOrder: Date.now() });
+      alert('เพิ่มเมนูสำเร็จ! 🐮'); 
+      setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
+    } catch (e) { alert(e.message); }
+  };
+
+  // แยกฟังก์ชันอัปเดตเมนูที่กำลังแก้ไข
+  const handleUpdateMenu = async () => {
+    if (!editingMenu.name || !editingMenu.price || !editingMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
+    try {
+      await updateDoc(doc(db, 'menus', editingMenu.id), { ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false, isOnlyBlend: editingMenu.isOnlyBlend || false, allowBlend: editingMenu.isOnlyBlend ? true : (editingMenu.allowBlend !== false), isPromoted: editingMenu.isPromoted || false, isSoldOut: editingMenu.isSoldOut || false, hasTeaType: editingMenu.hasTeaType || false });
+      alert('แก้ไขเมนูสำเร็จ! ✨'); 
+      setEditingMenu(null);
     } catch (e) { alert(e.message); }
   };
 
@@ -373,9 +377,7 @@ export default function App() {
   const updateTheme = async (newTheme) => { try { await setDoc(doc(db, 'settings', 'store'), { theme: newTheme }, { merge: true }); alert(`เปลี่ยนธีมร้านเป็น ${THEMES[newTheme].name} เรียบร้อย! 🎨`); } catch(e) { alert("Error: " + e.message); } };
 
   const openOptionModal = (item) => {
-    // ป้องกันการกดสั่งเมนูเฉพาะปั่น ในกรณีที่แอดมินปิดรับออร์เดอร์ปั่น
     if (item.isSoldOut || (item.isOnlyBlend && storeSettings.isBlendOut)) return;
-    
     setOptionModalItem(item);
     setTempOptions({ 
       sweetness: '100%', 
@@ -483,7 +485,6 @@ export default function App() {
   const currentThemeData = THEMES[storeSettings.theme] || THEMES.default;
   const cartTotal = cart.reduce((s,i)=>s+(i.price*i.qty),0);
 
-  // ตั้งค่า Style หลักให้รองรับรูปพื้นหลังคัสตอม
   const mainContainerStyle = {
     backgroundColor: currentThemeData.bg,
     backgroundImage: storeSettings.theme === 'custom' && storeSettings.customBgImage ? `url(${storeSettings.customBgImage})` : 'none',
@@ -573,15 +574,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* Overlay สำหรับปิดการค้นหา */}
       {isSearchFocused && view === 'shop' && <div className="fixed inset-0 z-[40] bg-black/10 backdrop-blur-sm" onClick={() => setIsSearchFocused(false)}></div>}
 
-      {/* Main Content */}
       <main className="flex-1 pb-10 relative z-10">
         {view === 'shop' && (
           <div className="animate-in fade-in">
-            
-            {/* --- ช่องค้นหา (Customer) --- */}
             <div className="px-5 pt-4 pb-2 sticky top-[73px] z-[45]" style={{ backgroundColor: currentThemeData.bg }}>
               <div className="relative z-[50]">
                 <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -599,7 +596,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Suggestion Dropdown */}
               {isSearchFocused && !searchQuery && (searchHistory.length > 0 || popularSearches.length > 0) && (
                 <div className="absolute top-[110%] left-5 right-5 bg-white/95 backdrop-blur-md rounded-[2rem] shadow-2xl border border-gray-100 p-5 z-[50] animate-in fade-in slide-in-from-top-2">
                    {searchHistory.length > 0 && (
@@ -629,20 +625,17 @@ export default function App() {
               )}
             </div>
 
-            {/* --- แถบสไลด์เมนูแนะนำ (ซ่อนตอนกำลังค้นหา) --- */}
             {!searchQuery && promotedItems.length > 0 && (
               <div className="pt-2 pb-2">
                 <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
                   {promotedItems.map(item => (
                     <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
                       <div onClick={() => openOptionModal(item)} className={`bg-white/90 backdrop-blur-sm rounded-[2rem] p-3 shadow-md flex items-center gap-4 border border-orange-100 transition-all h-full relative overflow-hidden animate-shimmer glow-effect ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
-                         
                          {item.isSoldOut && (
                             <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
                                <div className="bg-primary text-white px-4 py-1.5 rounded-full font-bold text-xs border border-white/50 shadow-xl rotate-[-5deg] tracking-widest flex items-center gap-1">SOLD OUT</div>
                             </div>
                          )}
-
                          <div className="relative">
                             <img src={item.image} className={`w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0 ${item.isSoldOut ? 'grayscale' : ''}`} alt={item.name} />
                             <div className="absolute -bottom-2 -right-2 text-2xl floating-badge drop-shadow-md">🔥</div>
@@ -662,7 +655,6 @@ export default function App() {
               </div>
             )}
 
-            {/* --- เงื่อนไขการจัดส่ง (โชว์หน้าแรก) --- */}
             {!searchQuery && (
               <div className="mx-5 mb-2 mt-4 p-4 bg-white/80 backdrop-blur-sm border-l-4 border-l-[var(--theme-accent)] rounded-r-2xl shadow-sm animate-in fade-in relative overflow-hidden">
                 <h4 className="text-xs font-bold text-accent mb-2 flex items-center gap-1"><AlertCircle size={14}/> เงื่อนไขการสั่งซื้อ (รบกวนอ่านก่อนนะคะ 💖)</h4>
@@ -675,7 +667,6 @@ export default function App() {
               </div>
             )}
 
-            {/* --- ประกาศเมนูปั่นหมด (ถ้าแอดมินตั้งค่า) --- */}
             {!searchQuery && storeSettings.isBlendOut && (
               <div className="mx-5 mb-2 mt-2 p-3 bg-blue-50 border border-blue-200 rounded-2xl shadow-sm animate-in fade-in text-center flex items-center justify-center gap-2">
                  <Zap size={16} className="text-blue-500"/>
@@ -683,7 +674,6 @@ export default function App() {
               </div>
             )}
 
-            {/* --- หมวดหมู่ (ซ่อนตอนกำลังค้นหา) --- */}
             {!searchQuery && (
               <div className="flex gap-2 overflow-x-auto hide-scrollbar px-5 py-3 sticky top-[138px] z-[40] backdrop-blur-md" style={{ backgroundColor: `${currentThemeData.bg}e6` }}>
                 {CATEGORIES.map(c => (
@@ -692,7 +682,6 @@ export default function App() {
               </div>
             )}
 
-            {/* --- รายการเมนู --- */}
             <div className="px-5 pb-5 pt-2">
               {searchQuery && <p className="text-sm font-bold text-primary mb-4 ml-1">ผลการค้นหา "{searchQuery}" ({displayedItems.length} รายการ)</p>}
               {isLoading ? <div className="p-20 text-center opacity-30 italic font-bold">กำลังเตรียมเมนูแสนอร่อย... 🐮</div> : (
@@ -823,13 +812,7 @@ export default function App() {
                            setSlipStatus('checking');
                            const comp = await compressImage(file);
                            setSlipImage(comp);
-                           
-                           // --- จำลองระบบตรวจสอบสลิปด้วย AI (Mockup) ---
-                           // แจ้งให้ผู้ใช้ทราบว่า หากต้องการใช้จริงต้องต่อ API SlipOK
-                           setTimeout(() => {
-                              // จำลองว่ายอดเงินตรงเสมอเพื่อให้ลูกค้ายืนยันได้
-                              setSlipStatus('valid');
-                           }, 2000);
+                           setTimeout(() => setSlipStatus('valid'), 2000);
                         }
                       }} />
                     </label>
@@ -837,8 +820,6 @@ export default function App() {
                     {slipImage && (
                        <div className="mt-5 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
                           <img src={slipImage} className="h-32 mx-auto rounded-lg shadow-sm border border-gray-100 mb-3 object-contain bg-gray-50" alt="Slip" />
-                          
-                          {/* กล่องแสดงผลการจำลองตรวจสลิป */}
                           {slipStatus === 'checking' && (
                              <div className="flex flex-col items-center gap-2 text-blue-500 animate-pulse">
                                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -850,17 +831,11 @@ export default function App() {
                                <CheckCircle size={14}/> ยอดเงิน ฿{cartTotal} ตรงกับออร์เดอร์ (จำลองตรวจ AI)
                              </div>
                           )}
-                          {slipStatus === 'invalid' && (
-                             <div className="bg-red-50 text-red-600 p-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-red-100 animate-in zoom-in">
-                               <X size={14}/> ตรวจไม่พบยอดเงิน หรือสลิปไม่ถูกต้อง
-                             </div>
-                          )}
                        </div>
                     )}
                   </div>
                 )}
                 
-                {/* --- Checkbox ยอมรับเงื่อนไข --- */}
                 <label className={`flex items-start gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer shadow-sm ${acceptedTerms ? 'border-green-400 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                   <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 w-5 h-5 accent-green-600 cursor-pointer flex-shrink-0" />
                   <div className="flex-1">
@@ -942,7 +917,6 @@ export default function App() {
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6 hover:text-primary"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-2xl font-serif font-bold text-primary">ระบบแอดมิน</h2>
-               {/* ปุ่มทดสอบเสียงแจ้งเตือน */}
                <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95"><BellRing size={12}/> เปิด/เทสเสียงแจ้งเตือน</button>
             </div>
             
@@ -1010,7 +984,7 @@ export default function App() {
                       
                       <div className="space-y-1 border-t border-gray-100 pt-3 mb-3">{(o.items || []).map((i, idx) => (
                           <div key={idx} className="text-xs text-gray-600 flex justify-between font-medium">
-                            <span>{i.qty}x {i.name} ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}${i.teaType ? ` • ${i.teaType}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
+                            <span>{i.qty}x {i.name} ({getBlendText(i)} • หวาน {i.sweetness}{i.bean ? ` • ${i.bean}` : ''}{i.teaType ? ` • ${i.teaType}` : ''}{i.addShot ? ' • เพิ่มช็อต' : ''}{i.hasFreePearl && i.addPearl ? '+มุกฟรี':''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
                             <span className="font-bold">฿{i.price * i.qty}</span>
                           </div>
                       ))}</div>
@@ -1054,84 +1028,73 @@ export default function App() {
                    {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1.5 rounded-full hover:bg-gray-200"><X size={14}/></button>}
                 </div>
 
-                <div ref={editFormRef} className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative scroll-mt-24">
-                  <h3 className="font-bold text-sm text-accent uppercase tracking-widest">{editingMenu ? 'แก้ไขเมนู' : 'เพิ่มเมนูใหม่'}</h3>
-                  <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={editingMenu ? editingMenu.name : newMenu.name} onChange={e => editingMenu ? setEditingMenu({...editingMenu, name: e.target.value}) : setNewMenu({...newMenu, name: e.target.value})} />
+                {/* --- ฟอร์มเพิ่มเมนูใหม่เท่านั้น --- */}
+                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 text-center shadow-inner relative">
+                  <h3 className="font-bold text-sm text-accent uppercase tracking-widest flex items-center justify-center gap-2"><Plus size={16}/> เพิ่มเมนูใหม่</h3>
+                  <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
                   
                   <div className="flex gap-2">
-                    <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={editingMenu ? editingMenu.price : newMenu.price} onChange={e => editingMenu ? setEditingMenu({...editingMenu, price: e.target.value}) : setNewMenu({...newMenu, price: e.target.value})} />
+                    <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
                     
-                    <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={editingMenu ? editingMenu.category : newMenu.category} onChange={e => editingMenu ? setEditingMenu({...editingMenu, category: e.target.value}) : setNewMenu({...newMenu, category: e.target.value})}>
+                    <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
                       {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-blue-50 rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-100">
-                      <input type="checkbox" checked={editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend} onChange={e => {
-                        const val = e.target.checked;
-                        if(editingMenu) setEditingMenu({...editingMenu, isOnlyBlend: val, allowBlend: val ? true : editingMenu.allowBlend});
-                        else setNewMenu({...newMenu, isOnlyBlend: val, allowBlend: val ? true : newMenu.allowBlend});
-                      }} className="w-4 h-4 accent-blue-600 cursor-pointer" />
+                      <input type="checkbox" checked={newMenu.isOnlyBlend} onChange={e => setNewMenu({...newMenu, isOnlyBlend: e.target.checked, allowBlend: e.target.checked ? true : newMenu.allowBlend})} className="w-4 h-4 accent-blue-600 cursor-pointer" />
                       <span className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Zap size={14} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น (เช่น สมูทตี้)</span>
                     </label>
 
-                    <label className={`flex items-center justify-center gap-1 p-3 rounded-2xl shadow-sm border cursor-pointer transition-all ${ (editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend) ? 'bg-gray-100 border-gray-200 opacity-50' : 'bg-white border-blue-50 hover:bg-blue-50'}`}>
-                      <input type="checkbox" disabled={editingMenu ? editingMenu.isOnlyBlend : newMenu.isOnlyBlend} checked={editingMenu ? (editingMenu.isOnlyBlend || editingMenu.allowBlend !== false) : (newMenu.isOnlyBlend || newMenu.allowBlend !== false)} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowBlend: e.target.checked}) : setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400 cursor-pointer" />
+                    <label className={`flex items-center justify-center gap-1 p-3 rounded-2xl shadow-sm border cursor-pointer transition-all ${newMenu.isOnlyBlend ? 'bg-gray-100 border-gray-200 opacity-50' : 'bg-white border-blue-50 hover:bg-blue-50'}`}>
+                      <input type="checkbox" disabled={newMenu.isOnlyBlend} checked={newMenu.isOnlyBlend || newMenu.allowBlend !== false} onChange={e => setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400 cursor-pointer" />
                       <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
                     </label>
 
                     <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-gray-50 cursor-pointer transition-all hover:bg-gray-50">
-                      <input type="checkbox" checked={editingMenu ? editingMenu.allowTopping !== false : newMenu.allowTopping !== false} onChange={e => editingMenu ? setEditingMenu({...editingMenu, allowTopping: e.target.checked}) : setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-[#A67C52] cursor-pointer" />
+                      <input type="checkbox" checked={newMenu.allowTopping !== false} onChange={e => setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-[#A67C52] cursor-pointer" />
                       <span className="text-[10px] font-bold text-gray-500">ท็อปปิ้งได้</span>
                     </label>
 
                     <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer transition-all hover:bg-orange-50">
-                      <input type="checkbox" checked={editingMenu ? editingMenu.hasFreePearl : newMenu.hasFreePearl} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasFreePearl: e.target.checked}) : setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400 cursor-pointer" />
+                      <input type="checkbox" checked={newMenu.hasFreePearl} onChange={e => setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400 cursor-pointer" />
                       <span className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> มุกฟรี</span>
                     </label>
 
                     <label className="flex items-center justify-center gap-1 p-3 bg-gray-100 rounded-2xl shadow-sm border border-gray-200 cursor-pointer transition-all hover:bg-gray-200">
-                      <input type="checkbox" checked={editingMenu ? editingMenu.isSoldOut : newMenu.isSoldOut} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isSoldOut: e.target.checked}) : setNewMenu({...newMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-gray-600 cursor-pointer" />
+                      <input type="checkbox" checked={newMenu.isSoldOut} onChange={e => setNewMenu({...newMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-gray-600 cursor-pointer" />
                       <span className="text-[10px] font-bold text-gray-600 flex items-center gap-1">ปิดขายชั่วคราว</span>
                     </label>
 
                     <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
-                      <input type="checkbox" checked={editingMenu ? editingMenu.isPromoted : newMenu.isPromoted} onChange={e => editingMenu ? setEditingMenu({...editingMenu, isPromoted: e.target.checked}) : setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500 cursor-pointer" />
-                      <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์เป็นแบนเนอร์สไลด์)</span>
+                      <input type="checkbox" checked={newMenu.isPromoted} onChange={e => setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500 cursor-pointer" />
+                      <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์แบนเนอร์สไลด์)</span>
                     </label>
 
-                    {(editingMenu ? editingMenu.category : newMenu.category) === 'มัทฉะ' && (
+                    {newMenu.category === 'มัทฉะ' && (
                       <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-green-50 rounded-2xl shadow-sm border border-green-100 cursor-pointer transition-all hover:bg-green-100">
-                        <input type="checkbox" checked={editingMenu ? editingMenu.hasTeaType : newMenu.hasTeaType} onChange={e => editingMenu ? setEditingMenu({...editingMenu, hasTeaType: e.target.checked}) : setNewMenu({...newMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-green-600 cursor-pointer" />
+                        <input type="checkbox" checked={newMenu.hasTeaType} onChange={e => setNewMenu({...newMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-green-600 cursor-pointer" />
                         <span className="text-[11px] font-bold text-green-700 flex items-center gap-1">🍵 ให้ลูกค้าเลือกผงชา (มัทฉะ / โฮจิฉะ) ได้</span>
                       </label>
                     )}
                   </div>
 
-                  {(editingMenu ? editingMenu.allowBlend !== false : newMenu.allowBlend !== false) && 
-                   (editingMenu ? editingMenu.category : newMenu.category) !== 'สมูทตี้โยเกิร์ต' && 
-                   (editingMenu ? editingMenu.category : newMenu.category) !== 'ผลไม้และสมูทตี้' && (
+                  {newMenu.allowBlend !== false && newMenu.category !== 'สมูทตี้โยเกิร์ต' && newMenu.category !== 'ผลไม้และสมูทตี้' && (
                     <div className="mt-2 text-left">
                       <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
-                      <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] transition-all bg-white border border-transparent" value={editingMenu ? editingMenu.blendPrice : newMenu.blendPrice} onChange={e => editingMenu ? setEditingMenu({...editingMenu, blendPrice: e.target.value}) : setNewMenu({...newMenu, blendPrice: e.target.value})} />
+                      <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] transition-all bg-white border border-transparent" value={newMenu.blendPrice} onChange={e => setNewMenu({...newMenu, blendPrice: e.target.value})} />
                     </div>
                   )}
 
                   <label className="cursor-pointer bg-white border border-gray-200 p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-accent hover:border-accent transition-all mt-4">
-                    <Upload size={18} className="inline mr-2"/> {(editingMenu ? editingMenu.image : newMenu.image) ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
+                    <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
                     <input type="file" accept="image/*" className="hidden" onChange={async e => {
                       const file = e.target.files[0];
-                      if (file) {
-                        const compressedImage = await compressImage(file);
-                        editingMenu ? setEditingMenu({...editingMenu, image: compressedImage}) : setNewMenu({...newMenu, image: compressedImage});
-                      }
+                      if (file) { setNewMenu({...newMenu, image: await compressImage(file)}); }
                     }} />
                   </label>
-                  <div className="flex gap-2">
-                    {editingMenu && <button onClick={() => setEditingMenu(null)} className="flex-1 bg-gray-200 text-gray-500 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">ยกเลิก</button>}
-                    <button onClick={handleSaveMenu} className="flex-[2] bg-accent text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">{editingMenu ? <Save size={18}/> : <Plus size={18}/>}{editingMenu ? 'บันทึกการแก้ไข' : 'บันทึกเมนูใหม่'}</button>
-                  </div>
+                  <button onClick={handleAddNewMenu} className="w-full bg-accent text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"><Plus size={18}/> บันทึกเมนูใหม่</button>
                 </div>
 
                 <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 space-y-4 text-center shadow-inner relative mt-8">
@@ -1171,44 +1134,130 @@ export default function App() {
                       <div key={category} className="space-y-3">
                         <h4 className="font-bold text-lg text-primary border-b-2 border-accent/20 pb-2 ml-1">{category}</h4>
                         {itemsInCategory.map((item, idx) => (
-                          <div 
-                            key={item.id} draggable
-                            onDragStart={(e) => { dragItem.current = idx; e.currentTarget.classList.add('opacity-50', 'scale-95'); }}
-                            onDragEnter={(e) => dragOverItem.current = idx}
-                            onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-50', 'scale-95'); handleSortDrop(itemsInCategory); }}
-                            onDragOver={(e) => e.preventDefault()}
-                            className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="flex flex-col items-center gap-1 z-10">
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === 0 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
-                                <div className="text-gray-300 flex-col items-center justify-center px-1 hidden sm:flex">
-                                  <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
-                                  <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
-                                  <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+                          <div key={item.id} className="flex flex-col gap-1">
+                            <div 
+                              draggable={!(editingMenu && editingMenu.id === item.id)}
+                              onDragStart={(e) => { dragItem.current = idx; e.currentTarget.classList.add('opacity-50', 'scale-95'); }}
+                              onDragEnter={(e) => dragOverItem.current = idx}
+                              onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-50', 'scale-95'); handleSortDrop(itemsInCategory); }}
+                              onDragOver={(e) => e.preventDefault()}
+                              className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="flex flex-col items-center gap-1 z-10">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === 0 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
+                                  <div className="text-gray-300 flex-col items-center justify-center px-1 hidden sm:flex">
+                                    <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                    <div className="w-1 h-1 bg-gray-300 rounded-full mb-1"></div>
+                                    <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+                                  </div>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
                                 </div>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
+                                <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
+                                <div>
+                                  <p className="font-bold text-sm text-primary flex items-center gap-1 flex-wrap">
+                                    {item.name} 
+                                    {item.isPromoted && <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">แนะนำ</span>}
+                                    {item.isSoldOut && <span className="text-[8px] bg-gray-500 text-white px-1.5 py-0.5 rounded-full">หมด</span>}
+                                  </p>
+                                  <p className="text-xs text-accent font-bold">฿{item.price} {item.hasFreePearl && !item.isSoldOut ? '🌟' : ''}</p>
+                                  <div className="flex gap-1 mt-1">
+                                    {item.isOnlyBlend && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-sm">เฉพาะปั่น</span>}
+                                    {item.allowBlend === false && !item.isOnlyBlend && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
+                                    {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
+                                    {item.hasTeaType && <p className="text-[9px] text-green-600 bg-green-50 px-1 rounded-sm border border-green-200">เลือกผงชาได้</p>}
+                                  </div>
+                                </div>
                               </div>
-                              <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
-                              <div>
-                                 <p className="font-bold text-sm text-primary flex items-center gap-1 flex-wrap">
-                                   {item.name} 
-                                   {item.isPromoted && <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">แนะนำ</span>}
-                                   {item.isSoldOut && <span className="text-[8px] bg-gray-500 text-white px-1.5 py-0.5 rounded-full">หมด</span>}
-                                 </p>
-                                 <p className="text-xs text-accent font-bold">฿{item.price} {item.hasFreePearl && !item.isSoldOut ? '🌟' : ''}</p>
-                                 <div className="flex gap-1 mt-1">
-                                   {item.isOnlyBlend && <span className="text-[8px] bg-blue-500 text-white px-1.5 py-0.5 rounded-sm">เฉพาะปั่น</span>}
-                                   {item.allowBlend === false && !item.isOnlyBlend && <p className="text-[9px] text-blue-400 bg-blue-50 px-1 rounded-sm">ไม่มีปั่น</p>}
-                                   {item.allowTopping === false && <p className="text-[9px] text-red-400 bg-red-50 px-1 rounded-sm">ห้ามเพิ่มท็อปปิ้ง</p>}
-                                   {item.hasTeaType && <p className="text-[9px] text-green-600 bg-green-50 px-1 rounded-sm border border-green-200">เลือกผงชาได้</p>}
-                                 </div>
+                              <div className="flex gap-2 z-10">
+                                {/* ปุ่มเปิด/ปิด ฟอร์มแก้ไข Inline */}
+                                <button type="button" onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  if (editingMenu && editingMenu.id === item.id) {
+                                    setEditingMenu(null); 
+                                  } else {
+                                    setEditingMenu(item); 
+                                  }
+                                }} className={`p-3 active:scale-90 transition-all rounded-xl ${editingMenu && editingMenu.id === item.id ? 'bg-orange-500 text-white shadow-md' : 'text-blue-500 hover:bg-blue-100 bg-blue-50'}`}>
+                                  {editingMenu && editingMenu.id === item.id ? <X size={16}/> : <Edit size={16}/>}
+                                </button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-3 text-red-500 hover:bg-red-100 active:scale-90 transition-all bg-red-50 rounded-xl"><Trash2 size={16}/></button>
                               </div>
                             </div>
-                            <div className="flex gap-2 z-10">
-                              <button type="button" onClick={(e) => { e.stopPropagation(); setEditingMenu(item); setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }} className="p-3 text-blue-500 hover:bg-blue-100 active:scale-90 transition-all bg-blue-50 rounded-xl"><Edit size={16}/></button>
-                              <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-3 text-red-500 hover:bg-red-100 active:scale-90 transition-all bg-red-50 rounded-xl"><Trash2 size={16}/></button>
-                            </div>
+                            
+                            {/* --- ฟอร์มแก้ไขเมนู (เปิดแทรกด้านล่างเมนู) --- */}
+                            {editingMenu && editingMenu.id === item.id && (
+                              <div className="bg-orange-50 p-5 rounded-3xl border border-orange-200 shadow-inner mt-2 mb-4 mx-1 animate-in slide-in-from-top-4 space-y-4">
+                                <div className="flex justify-between items-center mb-1 border-b border-orange-100 pb-2">
+                                   <h4 className="font-bold text-sm text-orange-600 flex items-center gap-2"><Edit size={16}/> แก้ไขเมนู</h4>
+                                </div>
+                                <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white" value={editingMenu.name} onChange={e => setEditingMenu({...editingMenu, name: e.target.value})} />
+                                <div className="flex gap-2">
+                                  <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white" value={editingMenu.price} onChange={e => setEditingMenu({...editingMenu, price: e.target.value})} />
+                                  <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white focus:ring-2 focus:ring-orange-400 border border-transparent" value={editingMenu.category} onChange={e => setEditingMenu({...editingMenu, category: e.target.value})}>
+                                    {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                  <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-blue-50 rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-100">
+                                    <input type="checkbox" checked={editingMenu.isOnlyBlend} onChange={e => setEditingMenu({...editingMenu, isOnlyBlend: e.target.checked, allowBlend: e.target.checked ? true : editingMenu.allowBlend})} className="w-4 h-4 accent-blue-600 cursor-pointer" />
+                                    <span className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Zap size={14} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น (เช่น สมูทตี้)</span>
+                                  </label>
+
+                                  <label className={`flex items-center justify-center gap-1 p-3 rounded-2xl shadow-sm border cursor-pointer transition-all ${editingMenu.isOnlyBlend ? 'bg-gray-100 border-gray-200 opacity-50' : 'bg-white border-blue-50 hover:bg-blue-50'}`}>
+                                    <input type="checkbox" disabled={editingMenu.isOnlyBlend} checked={editingMenu.isOnlyBlend || editingMenu.allowBlend !== false} onChange={e => setEditingMenu({...editingMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-gray-50 cursor-pointer transition-all hover:bg-gray-50">
+                                    <input type="checkbox" checked={editingMenu.allowTopping !== false} onChange={e => setEditingMenu({...editingMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-[#A67C52] cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-gray-500">ท็อปปิ้งได้</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer transition-all hover:bg-orange-50">
+                                    <input type="checkbox" checked={editingMenu.hasFreePearl} onChange={e => setEditingMenu({...editingMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> มุกฟรี</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-3 bg-gray-100 rounded-2xl shadow-sm border border-gray-200 cursor-pointer transition-all hover:bg-gray-200">
+                                    <input type="checkbox" checked={editingMenu.isSoldOut} onChange={e => setEditingMenu({...editingMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-gray-600 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-gray-600 flex items-center gap-1">ปิดขายชั่วคราว</span>
+                                  </label>
+
+                                  <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
+                                    <input type="checkbox" checked={editingMenu.isPromoted} onChange={e => setEditingMenu({...editingMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500 cursor-pointer" />
+                                    <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ (โชว์แบนเนอร์สไลด์)</span>
+                                  </label>
+
+                                  {editingMenu.category === 'มัทฉะ' && (
+                                    <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-green-50 rounded-2xl shadow-sm border border-green-100 cursor-pointer transition-all hover:bg-green-100">
+                                      <input type="checkbox" checked={editingMenu.hasTeaType} onChange={e => setEditingMenu({...editingMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-green-600 cursor-pointer" />
+                                      <span className="text-[11px] font-bold text-green-700 flex items-center gap-1">🍵 ให้ลูกค้าเลือกผงชา (มัทฉะ / โฮจิฉะ) ได้</span>
+                                    </label>
+                                  )}
+                                </div>
+
+                                {editingMenu.allowBlend !== false && editingMenu.category !== 'สมูทตี้โยเกิร์ต' && editingMenu.category !== 'ผลไม้และสมูทตี้' && (
+                                  <div className="mt-2 text-left">
+                                    <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
+                                    <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 transition-all bg-white border border-transparent" value={editingMenu.blendPrice} onChange={e => setEditingMenu({...editingMenu, blendPrice: e.target.value})} />
+                                  </div>
+                                )}
+
+                                <label className="cursor-pointer bg-white border border-gray-200 p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-orange-500 hover:border-orange-300 transition-all mt-4">
+                                  <Upload size={18} className="inline mr-2"/> {editingMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
+                                  <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                                    const file = e.target.files[0];
+                                    if (file) { setEditingMenu({...editingMenu, image: await compressImage(file)}); }
+                                  }} />
+                                </label>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setEditingMenu(null)} className="flex-1 bg-white border border-gray-200 text-gray-500 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-sm">ยกเลิก</button>
+                                  <button onClick={handleUpdateMenu} className="flex-[2] bg-orange-500 text-white py-4 rounded-2xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={18}/> บันทึกการแก้ไข</button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

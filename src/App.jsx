@@ -3,30 +3,29 @@ import {
   ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, 
   MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, 
   Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, 
-  TrendingUp, Download, ArrowUp, ArrowDown, Search, Palette, BellRing 
+  TrendingUp, Download, ArrowUp, ArrowDown, Search, Palette, BellRing, Share2, UserCheck,
+  Sparkles
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
-// --- 1. Firebase Configuration (ใช้วิธีเรียกผ่าน Env เพื่อความปลอดภัยสูงสุด) ---
+// --- 1. Firebase Configuration (ตั้งค่าการเชื่อมต่อฐานข้อมูล) ---
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "happycowshop-fd7b0.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "happycowshop-fd7b0",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "happycowshop-fd7b0.firebasestorage.app",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "373478946147",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:373478946147:web:915a1dea4d2e3667f34f56"
+  apiKey: "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",
+  authDomain: "happycowshop-fd7b0.firebaseapp.com",
+  projectId: "happycowshop-fd7b0",
+  storageBucket: "happycowshop-fd7b0.firebasestorage.app",
+  messagingSenderId: "373478946147",
+  appId: "1:373478946147:web:915a1dea4d2e3667f34f56"
 };
 
-// เริ่มการเชื่อมต่อระบบ Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const LIFF_ID = process.env.REACT_APP_LIFF_ID || "2009828681-C1cb8QC3"; 
+const LIFF_ID = "2009828681-C1cb8QC3"; 
 
 const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'สมูทตี้โยเกิร์ต', 'วิปครีมและครีมชีส'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%', '120%'];
 
-// --- Configuration สำหรับธีมต่างๆ ของร้านค้า ---
 const THEMES = {
   default: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: 'ปกติ (มินิมอล)', icons: [] },
   christmas: { bg: '#f0fdf4', primary: '#166534', accent: '#dc2626', name: '🎄 คริสต์มาส', icons: ['❄️', '⛄', '🎁', '🦌'] },
@@ -38,7 +37,7 @@ const THEMES = {
   custom: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: '🎨 อัปโหลดเอง', icons: [] },
 };
 
-// --- ฟังก์ชันสำหรับการบีบอัดรูปภาพฝั่ง Client เพื่อประสิทธิภาพสูงสุด ---
+// --- 2. ฟังก์ชันบีบอัดรูปภาพ (Image Compression) ---
 const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -49,11 +48,8 @@ const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => 
       img.onload = () => {
         let width = img.width;
         let height = img.height;
-        if (width > height) { 
-          if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; } 
-        } else { 
-          if (height > maxHeight) { width = Math.round((width * maxHeight) / height); height = maxHeight; } 
-        }
+        if (width > height) { if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; } } 
+        else { if (height > maxHeight) { width = Math.round((width * maxHeight) / height); height = maxHeight; } }
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
@@ -67,47 +63,65 @@ const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => 
 };
 
 export default function App() {
-  // --- States ทั้งหมดของระบบ ---
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
   const [toppings, setToppings] = useState([]); 
   
-  const [cart, setCart] = useState(() => {
-    try { const saved = localStorage.getItem('happycow_cart'); return saved ? JSON.parse(saved) : []; }
-    catch(e) { return []; }
-  });
-  
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
+  // --- นำทางสำหรับลูกค้าครั้งแรกและแอดมิน ---
   const [view, setView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('action') === 'viewOrders') return 'myOrders';
+    const action = params.get('action');
+    
+    if (action === 'viewOrders') {
+      const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
+      if (isAdmin) return 'admin'; // ถ้าเป็นแอดมิน คลิกบิลลูกค้าจะวิ่งไปหน้าแอดมินโดยตรง
+      return 'myOrders';
+    }
+    if (action === 'admin') {
+      return localStorage.getItem('happycow_isAdmin') === 'true' ? 'admin' : 'shop';
+    }
+    
+    // ตรวจสอบเช็กเซสชันของผู้ใช้ใหม่ (First time of this session) ให้แสดงเมนูก่อนเสมอ
+    const isFirstTimeSession = !sessionStorage.getItem('happycow_session_active');
+    sessionStorage.setItem('happycow_session_active', 'true');
+    if (isFirstTimeSession) {
+      return 'shop';
+    }
     return localStorage.getItem('happycow_view') || 'shop';
   }); 
+
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingOrders, setIsLoadingOrders] = useState(() => new URLSearchParams(window.location.search).get('action') === 'viewOrders');
   
   const [address, setAddress] = useState(() => localStorage.getItem('happycow_address') || '');
   const [note, setNote] = useState(() => localStorage.getItem('happycow_note') || ''); 
   const [slipImage, setSlipImage] = useState('');
-  const [slipStatus, setSlipStatus] = useState('idle'); // idle, checking, valid, invalid
+  const [slipStatus, setSlipStatus] = useState('idle'); 
   const [paymentMethod, setPaymentMethod] = useState(() => localStorage.getItem('happycow_paymentMethod') || 'promptpay'); 
   const [isCopied, setIsCopied] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  // Custom Alert / Confirm Box State
+  const [msgBox, setMsgBox] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
+  const showAlert = (message) => setMsgBox({ isOpen: true, type: 'alert', message, onConfirm: null });
+  const showConfirm = (message, onConfirm) => setMsgBox({ isOpen: true, type: 'confirm', message, onConfirm });
   
-  // Admin Mode States
+  // --- States: แอดมิน (Admin) ---
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
-  const [adminTab, setAdminTab] = useState('orders');
+  const [adminTab, setAdminTab] = useState('orders'); // เริ่มต้นที่หน้าจัดการออเดอร์เสมอ
   const [selectedSlip, setSelectedSlip] = useState(null); 
+  const [downloadPreview, setDownloadPreview] = useState(null); 
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   
-  // Delivery States
+  // สถานะออเดอร์ที่ถูกกดส่งลิงก์มาเพื่อทำการไฮไลต์
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+
   const [deliveryModal, setDeliveryModal] = useState(null);
   const [deliveryImage, setDeliveryImage] = useState('');
   const [deliveryLocation, setDeliveryLocation] = useState('room');
   const [isDelivering, setIsDelivering] = useState(false);
   
-  // การตั้งค่าร้านค้า (Store Global Settings)
   const [storeSettings, setStoreSettings] = useState({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false, notifyAdmin: false, adminLineId: '' });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
@@ -115,7 +129,6 @@ export default function App() {
   const [editNotifyAdmin, setEditNotifyAdmin] = useState(false);
   const [editAdminLineId, setEditAdminLineId] = useState('');
   
-  // การจัดการฟอร์มระบบหลังบ้าน
   const [newMenu, setNewMenu] = useState({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
   const [editingMenu, setEditingMenu] = useState(null); 
   const [newTopping, setNewTopping] = useState({ name: '', price: '' }); 
@@ -123,11 +136,16 @@ export default function App() {
   const [showAddMenuForm, setShowAddMenuForm] = useState(false);
   const [showAddToppingForm, setShowAddToppingForm] = useState(false);
 
+  // --- States: Failsafe Order Success ---
+  const [successModalData, setSuccessModalData] = useState(null);
+  
+  // 🌟 State: Failsafe สำหรับแอดมินตอนกดยืนยันจัดส่งแล้วแชร์ไม่ได้
+  const [adminDeliverySuccessData, setAdminDeliverySuccessData] = useState(null);
+
   const [optionModalItem, setOptionModalItem] = useState(null);
   const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [] });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
-  // ระบบประวัติและสถิติการค้นหา
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchHistory, setSearchHistory] = useState(() => {
@@ -136,19 +154,16 @@ export default function App() {
   });
   const [popularSearches, setPopularSearches] = useState([]);
 
-  // References สำหรับฟังก์ชันเสียงและ Drag/Drop
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
   const audioRef = useRef(null);
   const previousOrderCount = useRef(0);
 
-  // คำนวณส่วนต่างราคาเมนูปั่น
   const getAddedBlendPrice = (item) => {
     if (item.category === 'สมูทตี้โยเกิร์ต' || item.category === 'ผลไม้และสมูทตี้') return 0;
     return (item.blendPrice !== undefined && item.blendPrice !== null && item.blendPrice !== '') ? Number(item.blendPrice) : 5;
   };
 
-  // Sync ข้อมูลลง LocalStorage เมื่อ State มีการเปลี่ยนแปลง
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
   useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
@@ -163,28 +178,34 @@ export default function App() {
     }
   }, [isLoadingOrders]);
 
-  // Real-time Data Synchronization จาก Firebase Firestore
   useEffect(() => {
     let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);
     localStorage.setItem('happycow_uid', cid);
     setLineProfile(prev => ({ ...prev, userId: cid }));
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('action') === 'admin') {
-       setShowAdminModal(true);
+    if (params.get('action') === 'admin') setShowAdminModal(true);
+
+    // ตรวจจับ deep-link orderId เพื่อพาแอดมินหรือลูกค้าไปยังออเดอร์นั้น
+    const orderId = params.get('orderId');
+    if (orderId) {
+      setSelectedOrderId(orderId);
+      const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
+      if (isAdmin) {
+        setView('admin');
+        setAdminTab('orders');
+        setAdminSearchQuery(orderId); // ทำการกรองทันทีในหน้าจอแอดมิน
+      } else {
+        setView('myOrders');
+      }
     }
 
-    // ฟังก์ชันเริ่มต้นสำหรับ LINE LIFF SDK
     const initializeLiff = () => {
-      if (window.liff) {
-        window.liff.init({ liffId: LIFF_ID }).then(() => {
-          if (window.liff.isLoggedIn()) {
-            window.liff.getProfile().then(p => setLineProfile({ displayName: p.displayName, pictureUrl: p.pictureUrl, userId: p.userId }));
-          } else {
-            window.liff.login({ redirectUri: window.location.href });
-          }
-        }).catch(err => console.error("LIFF SDK Init Error", err));
-      }
+      window.liff.init({ liffId: LIFF_ID }).then(() => {
+        if (window.liff.isLoggedIn()) {
+          window.liff.getProfile().then(p => setLineProfile({ displayName: p.displayName, pictureUrl: p.pictureUrl, userId: p.userId }));
+        }
+      }).catch(err => console.error("LIFF Error", err));
     };
 
     if (window.liff) initializeLiff();
@@ -195,13 +216,9 @@ export default function App() {
       document.body.appendChild(script);
     }
 
-    // 🔥 [แก้ไขจุดบกพร่องสำคัญ]: เรียกใช้งาน .data() ในการดึงเอกสารเมนูและท็อปปิ้ง เพื่อให้แสดงผลในฝั่ง Client
     const unsubMenus = onSnapshot(collection(db, 'menus'), snapshot => { 
       setMenuItems(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))); 
       setIsLoading(false); 
-    }, error => {
-      console.error("Firestore Menu Stream Error:", error);
-      setIsLoading(false);
     });
 
     const unsubOrders = onSnapshot(collection(db, 'orders'), snapshot => { 
@@ -222,13 +239,6 @@ export default function App() {
         setEditCustomBgImage(data.customBgImage || '');
         setEditNotifyAdmin(data.notifyAdmin || false);
         setEditAdminLineId(data.adminLineId || '');
-      } else {
-        setStoreSettings({ promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', customBgImage: '', isBlendOut: false, notifyAdmin: false, adminLineId: '' });
-        setEditPromptPay('0812345678'); 
-        setEditQrCodeImage('');
-        setEditCustomBgImage('');
-        setEditNotifyAdmin(false);
-        setEditAdminLineId('');
       }
     });
 
@@ -240,16 +250,9 @@ export default function App() {
       } else setPopularSearches([]);
     });
 
-    return () => {
-      unsubMenus();
-      unsubOrders();
-      unsubToppings();
-      unsubSettings();
-      unsubSearchStats();
-    };
+    return () => { unsubMenus(); unsubOrders(); unsubToppings(); unsubSettings(); unsubSearchStats(); };
   }, []);
 
-  // ระบบส่งเสียงแจ้งเตือนสำหรับผู้บริหารจัดการ (Admin Side Alert Tone)
   const playNotificationSound = () => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -260,7 +263,7 @@ export default function App() {
             audioRef.current.play().catch(e => console.log('Autoplay blocked', e));
           }
         }, 800);
-      }).catch(e => console.log('Notification Sound blocked by client policy', e));
+      }).catch(e => console.log('Autoplay blocked by browser policy', e));
     }
   };
 
@@ -268,36 +271,60 @@ export default function App() {
     if (orders.length > previousOrderCount.current && previousOrderCount.current !== 0) {
       const newOrders = orders.slice(0, orders.length - previousOrderCount.current);
       const hasNewPending = newOrders.some(o => o.status === 'pending');
-      if (hasNewPending && view === 'admin') {
-        playNotificationSound();
-      }
+      if (hasNewPending && view === 'admin') playNotificationSound();
     }
     previousOrderCount.current = orders.length;
   }, [orders, view]);
 
   const handleLineLogin = () => { if (window.liff && !window.liff.isLoggedIn()) window.liff.login(); };
 
+  const handleDownloadImage = async (base64String, fileName) => {
+    if (window.liff && window.liff.isInClient()) {
+      setDownloadPreview(base64String); 
+      return;
+    }
+    try {
+      const res = await fetch(base64String);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download Error:", error);
+      setDownloadPreview(base64String);
+    }
+  };
+
   const handleAddNewMenu = async () => {
-    if (!newMenu.name || !newMenu.price || !newMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
-    if (newMenu.category === '🔥 เมนูขายดี') return alert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
+    if (!newMenu.name || !newMenu.price || !newMenu.image) return showAlert('กรุณากรอกข้อมูลให้ครบครับ');
+    if (newMenu.category === '🔥 เมนูขายดี') return showAlert('หมวดหมู่ "เมนูขายดี" เป็นระบบอัตโนมัติ กรุณาเลือกหมวดหมู่อื่นครับ');
     try {
       await addDoc(collection(db, 'menus'), { ...newMenu, price: Number(newMenu.price), blendPrice: Number(newMenu.blendPrice), allowTopping: newMenu.allowTopping !== false, isOnlyBlend: newMenu.isOnlyBlend || false, allowBlend: newMenu.isOnlyBlend ? true : (newMenu.allowBlend !== false), isPromoted: newMenu.isPromoted || false, isSoldOut: newMenu.isSoldOut || false, hasTeaType: newMenu.hasTeaType || false, createdAt: Date.now(), sortOrder: Date.now() });
-      alert('เพิ่มเมนูสำเร็จ! 🐮'); 
+      showAlert('เพิ่มเมนูสำเร็จ! 🐮'); 
       setNewMenu({ name: '', price: '', category: 'นม', image: '', blendPrice: 5, hasFreePearl: false, allowTopping: true, allowBlend: true, isOnlyBlend: false, isPromoted: false, isSoldOut: false, hasTeaType: false });
       setShowAddMenuForm(false);
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
   };
 
   const handleUpdateMenu = async () => {
-    if (!editingMenu.name || !editingMenu.price || !editingMenu.image) return alert('กรุณากรอกข้อมูลให้ครบครับ');
+    if (!editingMenu.name || !editingMenu.price || !editingMenu.image) return showAlert('กรุณากรอกข้อมูลให้ครบครับ');
     try {
       await updateDoc(doc(db, 'menus', editingMenu.id), { ...editingMenu, price: Number(editingMenu.price), blendPrice: Number(editingMenu.blendPrice), allowTopping: editingMenu.allowTopping !== false, isOnlyBlend: editingMenu.isOnlyBlend || false, allowBlend: editingMenu.isOnlyBlend ? true : (editingMenu.allowBlend !== false), isPromoted: editingMenu.isPromoted || false, isSoldOut: editingMenu.isSoldOut || false, hasTeaType: editingMenu.hasTeaType || false });
-      alert('แก้ไขเมนูสำเร็จ! ✨'); 
+      showAlert('แก้ไขเมนูสำเร็จ! ✨'); 
       setEditingMenu(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
   };
 
-  const handleDeleteMenu = async (id) => { if(window.confirm('ลบเมนูนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'menus', id)); };
+  const handleDeleteMenu = (id) => { 
+      showConfirm('ลบเมนูนี้ใช่หรือไม่?', async () => {
+          await deleteDoc(doc(db, 'menus', id));
+      });
+  };
 
   const handleSortDrop = async (itemsInCategory) => {
     if (dragItem.current === null || dragOverItem.current === null) return;
@@ -335,33 +362,14 @@ export default function App() {
   };
 
   const handleAddTopping = async () => {
-    if (!newTopping.name || !newTopping.price) return alert('กรุณากรอกข้อมูลท็อปปิ้งให้ครบถ้วนครับ');
-    try { await addDoc(collection(db, 'toppings'), { name: newTopping.name, price: Number(newTopping.price) }); alert('เพิ่มท็อปปิ้งสำเร็จ!'); setNewTopping({ name: '', price: '' }); setShowAddToppingForm(false); } catch (e) { alert(e.message); }
+    if (!newTopping.name || !newTopping.price) return showAlert('กรุณากรอกข้อมูลท็อปปิ้งให้ครบถ้วนครับ');
+    try { await addDoc(collection(db, 'toppings'), { name: newTopping.name, price: Number(newTopping.price) }); showAlert('เพิ่มท็อปปิ้งสำเร็จ!'); setNewTopping({ name: '', price: '' }); setShowAddToppingForm(false); } catch (e) { showAlert(e.message); }
   };
 
-  const handleDeleteTopping = async (id) => { if(window.confirm('ลบท็อปปิ้งนี้ใช่หรือไม่?')) await deleteDoc(doc(db, 'toppings', id)); };
-
-  const handleAcceptOrder = async (order) => {
-    try {
-      await updateDoc(doc(db, 'orders', order.id), { status: 'cooking' });
-      const flexMessage = {
-        type: "flex", altText: "ร้านรับออร์เดอร์แล้ว!",
-        contents: {
-          type: "bubble",
-          header: { type: "box", layout: "vertical", backgroundColor: "#f97316", contents: [{ type: "text", text: "ร้านรับออร์เดอร์แล้ว! 👩‍🍳", color: "#ffffff", weight: "bold", align: "center", size: "md" }] },
-          body: {
-            type: "box", layout: "vertical", spacing: "md",
-            contents: [
-              { type: "text", text: `บิล #${order.id.slice(0,6)}`, weight: "bold", size: "sm", color: "#f97316" },
-              { type: "text", text: "ออร์เดอร์ของคุณกำลังถูกจัดเตรียม กรุณารอประมาณ 20 นาที (+/-) นะคะ ขอบคุณค่ะ 🐮💖", wrap: true, size: "sm", weight: "bold", color: "#333333" },
-              { type: "separator", margin: "md" },
-              { type: "button", style: "primary", color: "#A67C52", margin: "sm", action: { type: "uri", label: "📄 ดูสถานะออร์เดอร์", uri: `https://liff.line.me/${LIFF_ID}?action=viewOrders` } }
-            ]
-          }
-        }
-      };
-      await fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: order.userId, flexMessage }) });
-    } catch (e) { console.error(e); }
+  const handleDeleteTopping = (id) => { 
+      showConfirm('ลบท็อปปิ้งนี้ใช่หรือไม่?', async () => {
+          await deleteDoc(doc(db, 'toppings', id));
+      });
   };
 
   const handleSearchSubmit = async (term) => {
@@ -372,34 +380,83 @@ export default function App() {
     try { await setDoc(doc(db, 'settings', 'search_stats'), { [cleanTerm]: increment(1) }, { merge: true }); } catch (e) { console.error("Error saving search stats", e); }
   };
 
+  const handleAcceptOrder = async (order) => {
+    try {
+      await updateDoc(doc(db, 'orders', order.id), { status: 'cooking' });
+      
+      const flexPayload = {
+          type: "bubble",
+          header: { type: "box", layout: "vertical", backgroundColor: "#f97316", contents: [{ type: "text", text: "ร้านรับออร์เดอร์แล้ว! 👩‍🍳", color: "#ffffff", weight: "bold", align: "center", size: "md" }] },
+          body: {
+              type: "box", layout: "vertical", spacing: "md",
+              contents: [
+                  { type: "text", text: `บิล #${order.id.slice(0,6)}`, weight: "bold", size: "sm", color: "#f97316" },
+                  { type: "text", text: `ลูกค้า: คุณ ${order.lineName}`, weight: "bold", size: "sm", color: "#333333" },
+                  { type: "text", text: "ออร์เดอร์ของคุณกำลังถูกจัดเตรียม กรุณารอประมาณ 20 นาที (+/-) นะคะ ขอบคุณค่ะ 🐮💖", wrap: true, size: "sm", weight: "bold", color: "#333333" },
+                  { type: "separator", margin: "md" },
+                  { type: "button", style: "primary", color: "#A67C52", margin: "sm", action: { type: "uri", label: "📄 ดูสถานะออร์เดอร์", uri: `https://liff.line.me/${LIFF_ID}?action=viewOrders&orderId=${order.id}` } }
+              ]
+          }
+      };
+
+      if (window.liff && window.liff.isApiAvailable('shareTargetPicker')) {
+          try { await navigator.clipboard.writeText(order.lineName); } catch(e){} 
+          const res = await window.liff.shareTargetPicker([{ type: "flex", altText: `ออร์เดอร์ #${order.id.slice(0,6)} กำลังเตรียม!`, contents: flexPayload }]);
+          if (res) showAlert(`รับออร์เดอร์และส่งข้อความหาคุณ ${order.lineName} สำเร็จ! 🎉`);
+          else showAlert("อัปเดตสถานะในระบบแล้ว (คุณยกเลิกการแชร์เข้าแชทลูกค้า)");
+      } else {
+          showAlert("รับออร์เดอร์สำเร็จ! (เปิดใช้งานนอกแอป LINE จึงแชร์ข้อความไม่ได้)");
+      }
+    } catch (e) { showAlert("เกิดข้อผิดพลาด: " + e.message); }
+  };
+
   const handleConfirmDelivery = async () => {
-    if (!deliveryImage) return alert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
+    if (deliveryLocation !== 'pickup' && !deliveryImage) return showAlert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
     setIsDelivering(true);
     try {
-      const deliveryMessage = deliveryLocation === 'room' ? 'ขอบคุณที่สั่งออเดอร์นะคะ 💖' : 'ขออภัยแอดมินไม่สามารถเข้าตึกได้ รบกวนลูกค้าลงมารับเครื่องดื่มที่หน้าตึกนะคะ 🙏';
-      await updateDoc(doc(db, 'orders', deliveryModal.id), { status: 'completed', deliveryLocation: deliveryLocation, deliveryMessage: deliveryMessage, deliveryImage: deliveryImage });
-      
-      const flexMessage = {
-        type: "flex", altText: "อัปเดตสถานะการจัดส่ง",
-        contents: {
-          type: "bubble",
-          header: { type: "box", layout: "vertical", backgroundColor: "#4caf50", contents: [{ type: "text", text: "ออร์เดอร์จัดส่งแล้ว!", color: "#ffffff", weight: "bold", align: "center", size: "md" }] },
-          body: {
-            type: "box", layout: "vertical", spacing: "md",
-            contents: [
-              { type: "text", text: `บิล #${deliveryModal.id.slice(0,6)}`, weight: "bold", size: "sm", color: "#A67C52" },
-              { type: "text", text: deliveryMessage, wrap: true, size: "sm", weight: "bold", color: "#333333" },
-              { type: "separator", margin: "md" },
-              { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "📍 จุดส่ง:", size: "xs", color: "#888888", flex: 1 }, { type: "text", text: deliveryLocation === 'room' ? 'หน้าห้อง' : 'หน้าตึก', size: "xs", weight: "bold", flex: 3 }] },
-              { type: "text", text: "📌 ลูกค้าสามารถกดปุ่มด้านล่าง เพื่อดูรูปถ่ายการจัดส่งได้เลยนะคะ", wrap: true, size: "xxs", color: "#aaaaaa", margin: "md" },
-              { type: "button", style: "primary", color: "#A67C52", margin: "md", action: { type: "uri", label: "📸 กดดูรูปถ่ายที่นี่", uri: `https://liff.line.me/${LIFF_ID}?action=viewOrders` } }
-            ]
-          }
+      let deliveryMessage = '';
+      if (deliveryLocation === 'pickup') deliveryMessage = 'ลูกค้ารับสินค้าที่หน้าร้านเรียบร้อยแล้ว ขอบคุณที่อุดหนุนนะคะ 💖';
+      else if (deliveryLocation === 'room') deliveryMessage = 'จัดส่งถึงหน้าห้องเรียบร้อยแล้ว ขอบคุณที่สั่งออเดอร์นะคะ 💖';
+      else deliveryMessage = 'ขออภัยแอดมินไม่สามารถเข้าตึกได้ รบกวนลูกค้าลงมารับเครื่องดื่มที่หน้าตึกนะคะ 🙏';
+
+      await updateDoc(doc(db, 'orders', deliveryModal.id), { 
+         status: 'completed', deliveryLocation, deliveryMessage, deliveryImage: deliveryLocation === 'pickup' ? null : deliveryImage 
+      });
+
+      const locationText = deliveryLocation === 'room' ? 'หน้าห้อง' : (deliveryLocation === 'building' ? 'หน้าตึก' : 'รับเองที่หน้าร้าน');
+      const deliverySummaryText = `🛵 อัปเดตสถานะจัดส่ง!\nบิล #${deliveryModal.id.slice(0,6)}\nลูกค้า: คุณ ${deliveryModal.lineName}\n\n${deliveryMessage}\n📍 จุดส่ง: ${locationText}\n\n📄 เช็คสถานะหรือดูรูปถ่าย: https://liff.line.me/${LIFF_ID}?action=viewOrders&orderId=${deliveryModal.id}`;
+
+      const flexPayload = {
+        type: "bubble",
+        header: { type: "box", layout: "vertical", backgroundColor: "#4caf50", contents: [{ type: "text", text: "จัดส่งเครื่องดื่มแล้ว! 🛵", color: "#ffffff", weight: "bold", align: "center", size: "md" }] },
+        body: {
+          type: "box", layout: "vertical", spacing: "md",
+          contents: [
+            { type: "text", text: `บิล #${deliveryModal.id.slice(0,6)}`, weight: "bold", size: "sm", color: "#A67C52" },
+            { type: "text", text: `คุณลูกค้า: ${deliveryModal.lineName}`, weight: "bold", size: "sm", color: "#333333" },
+            { type: "text", text: deliveryMessage, wrap: true, size: "sm", weight: "bold", color: "#333333" },
+            { type: "separator", margin: "md" },
+            { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "📍 จุดส่ง:", size: "xs", color: "#888888", flex: 1 }, { type: "text", text: locationText, size: "xs", weight: "bold", flex: 3 }] },
+            deliveryLocation !== 'pickup' ? { type: "text", text: "📌 สามารถกดดูรูปถ่ายการจัดส่งได้ที่ปุ่มด้านล่างนะคะ", wrap: true, size: "xxs", color: "#aaaaaa", margin: "md" } : { type: "spacer", size: "xs" }
+          ]
+        },
+        footer: {
+          type: "box", layout: "vertical",
+          contents: [{ type: "button", style: "primary", color: "#A67C52", action: { type: "uri", label: deliveryLocation !== 'pickup' ? "📸 ดูรูป/สถานะออร์เดอร์" : "📄 ดูสถานะออร์เดอร์", uri: `https://liff.line.me/${LIFF_ID}?action=viewOrders&orderId=${deliveryModal.id}` } }]
         }
       };
-      await fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: deliveryModal.userId, flexMessage }) });
-      alert('บันทึกการจัดส่งและแจ้งเตือนลูกค้าเรียบร้อย! 🚀'); setDeliveryModal(null);
-    } catch (e) { alert("เกิดข้อผิดพลาด: " + e.message); }
+
+      if (window.liff && window.liff.isApiAvailable('shareTargetPicker')) {
+          try { await navigator.clipboard.writeText(deliveryModal.lineName); } catch(e){} 
+          try {
+              const res = await window.liff.shareTargetPicker([{ type: "flex", altText: `🛵 อัปเดตสถานะจัดส่ง: บิล #${deliveryModal.id.slice(0,6)}`, contents: flexPayload }]);
+              if (res) { setDeliveryModal(null); showAlert(`อัปเดตและแจ้งเตือนคุณ ${deliveryModal.lineName} สำเร็จ! 🎉`); } 
+              else { setDeliveryModal(null); setAdminDeliverySuccessData({ text: deliverySummaryText, orderId: deliveryModal.id }); }
+          } catch (err) { console.error(err); setDeliveryModal(null); setAdminDeliverySuccessData({ text: deliverySummaryText, orderId: deliveryModal.id }); }
+      } else {
+          setDeliveryModal(null); setAdminDeliverySuccessData({ text: deliverySummaryText, orderId: deliveryModal.id });
+      }
+    } catch (e) { showAlert("เกิดข้อผิดพลาด: " + e.message); }
     setIsDelivering(false);
   };
 
@@ -430,12 +487,12 @@ export default function App() {
 
   const exportToCSV = () => {
     const completedOrders = orders.filter(o => o.status === 'completed');
-    if (completedOrders.length === 0) return alert('ยังไม่มีข้อมูลคำสั่งซื้อที่เสร็จสมบูรณ์ครับ');
+    if (completedOrders.length === 0) return showAlert('ยังไม่มีข้อมูลคำสั่งซื้อที่เสร็จสมบูรณ์ครับ');
     let csv = "\uFEFFวันที่และเวลา,ชื่อลูกค้า,ยอดรวม(บาท),ช่องทางชำระเงิน,จุดจัดส่ง,ที่อยู่\n"; 
     completedOrders.forEach(o => {
       const date = new Date(o.timestamp).toLocaleString('th-TH');
-      const payment = o.paymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน';
-      const location = o.deliveryLocation === 'room' ? 'หน้าห้อง' : (o.deliveryLocation === 'building' ? 'หน้าตึก' : '-');
+      const payment = o.paymentMethod === 'cash' ? 'เงินสด' : (o.paymentMethod === 'thaichueithai' ? 'ไทยช่วยไทยพลัส' : 'โอนเงิน');
+      const location = o.deliveryLocation === 'room' ? 'หน้าห้อง' : (o.deliveryLocation === 'building' ? 'หน้าตึก' : (o.deliveryLocation === 'pickup' ? 'รับเองที่ร้าน' : '-'));
       csv += `"${date}","${(o.lineName||'').replace(/"/g, '""')}",${o.total},${payment},${location},"${(o.address||'').replace(/"/g, '""')}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -445,20 +502,32 @@ export default function App() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const updateStoreStatus = async (status) => { try { await setDoc(doc(db, 'settings', 'store'), { isStoreOpen: status }, { merge: true }); alert(`เปลี่ยนสถานะเรียบร้อย! 🐮`); } catch(e) { alert("Error: " + e.message); } };
-  const updateTheme = async (newTheme) => { try { await setDoc(doc(db, 'settings', 'store'), { theme: newTheme }, { merge: true }); alert(`เปลี่ยนธีมร้านเป็น ${THEMES[newTheme].name} เรียบร้อย! 🎨`); } catch(e) { alert("Error: " + e.message); } };
+  const exportMenuToCSV = () => {
+    if (menuItems.length === 0) return showAlert('ยังไม่มีเมนูในระบบครับ');
+    let csv = "\uFEFFหมวดหมู่,ชื่อเมนู,ราคาปกติ (เย็น),ราคาปั่น,สถานะ\n";
+    const sortedMenus = [...menuItems].sort((a, b) => a.category.localeCompare(b.category));
+    sortedMenus.forEach(m => {
+      const coldPrice = m.isOnlyBlend ? '-' : m.price;
+      const blendPrice = (m.allowBlend === false && !m.isOnlyBlend) ? '-' : (m.price + getAddedBlendPrice(m));
+      const status = m.isSoldOut ? 'หมดชั่วคราว' : 'พร้อมขาย';
+      csv += `"${m.category}","${(m.name||'').replace(/"/g, '""')}",${coldPrice},${blendPrice},${status}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `รายการเมนู_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const updateStoreStatus = async (status) => { try { await setDoc(doc(db, 'settings', 'store'), { isStoreOpen: status }, { merge: true }); showAlert(`เปลี่ยนสถานะเรียบร้อย! 🐮`); } catch(e) { showAlert("Error: " + e.message); } };
+  const updateTheme = async (newTheme) => { try { await setDoc(doc(db, 'settings', 'store'), { theme: newTheme }, { merge: true }); showAlert(`เปลี่ยนธีมร้านเป็น ${THEMES[newTheme].name} เรียบร้อย! 🎨`); } catch(e) { showAlert("Error: " + e.message); } };
 
   const openOptionModal = (item) => {
     if (item.isSoldOut || (item.isOnlyBlend && storeSettings.isBlendOut)) return;
     setOptionModalItem(item);
     setTempOptions({ 
-      sweetness: '100%', 
-      isBlended: item.isOnlyBlend ? true : false, 
-      addPearl: item.hasFreePearl || false, 
-      selectedToppings: [],
-      bean: item.category === 'กาแฟ' ? 'คั่วเข้ม' : null,
-      teaType: item.hasTeaType ? 'มัทฉะ' : null,
-      addShot: false
+      sweetness: '100%', isBlended: item.isOnlyBlend ? true : false, addPearl: item.hasFreePearl || false, 
+      selectedToppings: [], bean: item.category === 'กาแฟ' ? 'คั่วเข้ม' : null, teaType: item.hasTeaType ? 'มัทฉะ' : null, addShot: false
     });
     if(searchQuery) handleSearchSubmit(searchQuery);
   };
@@ -469,93 +538,18 @@ export default function App() {
     return item.isBlended ? 'ปั่น' : 'เย็น';
   };
 
-  const handleOrder = async () => {
-    if ((lineProfile.userId || '').startsWith('guest_')) return alert("⚠️ กรุณาล็อกอิน LINE ก่อนครับ");
-    if (!address) return alert("กรุณากรอกที่อยู่จัดส่งครับ");
-    if (paymentMethod === 'promptpay' && !slipImage) return alert("กรุณาแนบสลิปการโอนเงินครับ");
-    if (paymentMethod === 'promptpay' && slipStatus === 'checking') return alert("กรุณารอระบบตรวจสอบสลิปสักครู่นะครับ");
-    
-    setIsLoading(true);
-    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const orderData = { items: cart, total, status: 'pending', timestamp: Date.now(), userId: lineProfile.userId, lineName: lineProfile.displayName, address, note, slipImage: paymentMethod === 'promptpay' ? slipImage : 'cash_payment', paymentMethod: paymentMethod };
-
-    try {
-      await addDoc(collection(db, 'orders'), orderData);
-      const flexBodyContents = [
-        { type: "text", text: `ขอบคุณคุณ ${lineProfile.displayName}`, weight: "bold", size: "md" },
-        { type: "separator", margin: "md" },
-        ...cart.map(i => {
-          const toppingText = i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(', ')}` : '';
-          const blendText = getBlendText(i);
-          return { 
-            type: "box", layout: "vertical", margin: "sm", 
-            contents: [
-              { type: "box", layout: "horizontal", contents: [{ type: "text", text: `${i.qty}x ${i.name}${toppingText}`, size: "xs", flex: 3, wrap: true, weight: "bold" }, { type: "text", text: `฿${i.price * i.qty}`, size: "xs", align: "end", flex: 1, weight: "bold" }] },
-              { type: "text", text: `(${blendText} • หวาน ${i.sweetness}${i.bean ? ` • ${i.bean}` : ''}${i.teaType ? ` • ${i.teaType}` : ''}${i.addShot ? ' • เพิ่มช็อต' : ''}${i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})`, size: "xxs", color: "#888888", margin: "xs" }
-            ]
-          };
-        }),
-        { type: "separator", margin: "md" },
-        { type: "box", layout: "vertical", margin: "md", contents: [{ type: "text", text: "ที่อยู่จัดส่ง", size: "xs", color: "#888888", weight: "bold" }, { type: "text", text: address, size: "xs", wrap: true, margin: "xs" }]},
-        note.trim() ? { type: "box", layout: "vertical", margin: "sm", backgroundColor: "#F5F5F5", paddingAll: "sm", cornerRadius: "sm", contents: [{ type: "text", text: "หมายเหตุถึงร้าน", size: "xxs", color: "#888888", weight: "bold" }, { type: "text", text: note, size: "xs", wrap: true, margin: "xs" }] } : null,
-        { type: "separator", margin: "md" },
-        { type: "box", layout: "horizontal", margin: "md", contents: [{ type: "text", text: "รวมทั้งสิ้น", weight: "bold", size: "md" }, { type: "text", text: `฿${total}`, align: "end", weight: "bold", color: "#A67C52", size: "md" }] }
-      ].filter(Boolean);
-
-      const flexMessage = {
-        type: "flex", altText: "ใบเสร็จจากร้านวัวนมอารมณ์ดี",
-        contents: {
-          type: "bubble",
-          header: { type: "box", layout: "vertical", backgroundColor: "#3D2C1E", contents: [{ type: "text", text: "ร้านวัวนมอารมณ์ดี", color: "#ffffff", weight: "bold", size: "lg", align: "center" }, { type: "box", layout: "horizontal", backgroundColor: paymentMethod === 'promptpay' ? "#4caf50" : "#ff9800", cornerRadius: "sm", paddingAll: "xs", margin: "sm", contents: [{ type: "text", text: paymentMethod === 'promptpay' ? "ชำระเงินเรียบร้อยแล้ว" : "ชำระด้วยเงินสด", color: "#ffffff", size: "xxs", align: "center", weight: "bold" }] }] },
-          body: { type: "box", layout: "vertical", contents: flexBodyContents }
-        }
-      };
-
-      await fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: lineProfile.userId, flexMessage }) });
-      
-      if (storeSettings.notifyAdmin && storeSettings.adminLineId) {
-         const adminFlexMessage = {
-           type: "flex", altText: "🚨 มีออร์เดอร์ใหม่เข้า!",
-           contents: {
-             type: "bubble",
-             header: {
-               type: "box", layout: "vertical", backgroundColor: "#ef4444",
-               contents: [{ type: "text", text: "🚨 ออร์เดอร์ใหม่เข้าจ้า!", color: "#ffffff", weight: "bold", size: "md", align: "center" }]
-             },
-             body: {
-               type: "box", layout: "vertical", spacing: "md",
-               contents: [
-                 { type: "text", text: `ลูกค้า: ${lineProfile.displayName}`, weight: "bold", size: "sm", color: "#333333" },
-                 { type: "text", text: `ยอดรวม: ฿${total}`, size: "sm", weight: "bold", color: "#A67C52" },
-                 { type: "text", text: `การชำระเงิน: ${paymentMethod === 'promptpay' ? 'โอนเงิน (รอตรวจสลิป)' : 'เงินสด'}`, size: "xs", color: "#888888" },
-                 { type: "separator", margin: "md" },
-                 { type: "text", text: "กรุณากดปุ่มด้านล่างเพื่อเปิดระบบแอดมินและกดยอมรับออร์เดอร์นะคะ", wrap: true, size: "xxs", color: "#aaaaaa" },
-                 { type: "button", style: "primary", color: "#A67C52", margin: "md", action: { type: "uri", label: "📲 กดรับออร์เดอร์", uri: `https://liff.line.me/${LIFF_ID}?action=admin` } }
-               ]
-             }
-           }
-         };
-         fetch('/api/sendLine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: storeSettings.adminLineId, flexMessage: adminFlexMessage }) }).catch(e => console.error(e));
-      }
-
-      setCart([]); setSlipImage(''); setSlipStatus('idle'); setAddress(''); setNote(''); setAcceptedTerms(false); setView('myOrders'); alert("สั่งซื้อสำเร็จ! บิลส่งเข้าแชทแล้วนะครับ 🐮");
-    } catch (e) { alert("Error: " + e.message); }
-    setIsLoading(false);
-  };
-
   const copyPromptPay = () => { navigator.clipboard.writeText(storeSettings.promptPayNo || '0812345678').then(() => { setIsCopied(true); setTimeout(() => setIsCopied(false), 2000); }); };
 
-  // คำนวณสรุปข้อมูลเมนูยอดนิยมสูงสุดสำหรับแบนเนอร์หรืออันดับของร้านค้า
   const bestSellers = React.useMemo(() => {
-    if (orders.length === 0 || menuItems.length === 0) return [];
+    const defaultSlice = menuItems.slice(0, 4);
+    if (orders.length === 0 || menuItems.length === 0) return defaultSlice;
     const salesCount = {};
     orders.forEach(order => { (order.items || []).forEach(item => { salesCount[item.name] = (salesCount[item.name] || 0) + item.qty; }); });
     let sortedMenus = menuItems.map(menu => ({ ...menu, sales: salesCount[menu.name] || 0 }));
     sortedMenus = sortedMenus.filter(m => m.sales > 0).sort((a, b) => b.sales - a.sales);
-    return sortedMenus.length === 0 ? menuItems.slice(0, 4) : sortedMenus;
+    return sortedMenus.length === 0 ? defaultSlice : sortedMenus;
   }, [orders, menuItems]);
 
-  // ฟิลเตอร์และจัดหมวดหมู่ข้อมูลเครื่องดื่มที่นำมาจัดแสดงผลหน้าร้าน
   const displayedItems = React.useMemo(() => {
     if (searchQuery) return menuItems.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
     if (activeCategory === '🔥 เมนูขายดี') return bestSellers;
@@ -567,6 +561,18 @@ export default function App() {
   }, [activeCategory, menuItems, bestSellers, searchQuery]);
 
   const promotedItems = React.useMemo(() => menuItems.filter(i => i.isPromoted).sort((a, b) => (a.sortOrder || a.createdAt || 0) - (b.sortOrder || b.createdAt || 0)), [menuItems]);
+
+  // คัดกรองออเดอร์ของฝั่งแอดมิน ด้วยระบบ Search Query
+  const filteredOrders = React.useMemo(() => {
+    if (!adminSearchQuery) return orders;
+    const q = adminSearchQuery.trim().toLowerCase();
+    return orders.filter(o => 
+      o.id.toLowerCase().includes(q) || 
+      (o.lineName || '').toLowerCase().includes(q) || 
+      (o.address || '').toLowerCase().includes(q) ||
+      (o.paymentMethod || '').toLowerCase().includes(q)
+    );
+  }, [orders, adminSearchQuery]);
 
   const sliderRef = useRef(null);
   useEffect(() => {
@@ -588,9 +594,7 @@ export default function App() {
   const mainContainerStyle = {
     backgroundColor: currentThemeData.bg,
     backgroundImage: storeSettings.theme === 'custom' && storeSettings.customBgImage ? `url(${storeSettings.customBgImage})` : 'none',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    backgroundAttachment: 'fixed'
+    backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed'
   };
 
   return (
@@ -598,13 +602,14 @@ export default function App() {
       <audio id="orderNotification" ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2854/2854-preview.mp3" preload="auto"></audio>
       
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght=700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&family=Kanit:wght@400;600;700&display=swap');
         :root {
           --theme-primary: ${currentThemeData.primary};
           --theme-accent: ${currentThemeData.accent};
           --theme-bg: ${currentThemeData.bg};
         }
         .font-serif { font-family: 'Vollkorn', serif; }
+        .font-kanit { font-family: 'Kanit', sans-serif; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         
         .bg-primary { background-color: var(--theme-primary); color: #fff; }
@@ -621,6 +626,13 @@ export default function App() {
         @keyframes pulseGlow { from { box-shadow: 0 0 5px rgba(255, 165, 0, 0.2); } to { box-shadow: 0 0 15px rgba(255, 165, 0, 0.6); } }
         .glow-effect { animation: pulseGlow 2s infinite alternate; border: 2px solid #ffd700; }
         
+        @keyframes borderGlowPulse { 
+          0% { box-shadow: 0 0 0 0px rgba(245, 158, 11, 0.7); border-color: #f59e0b; }
+          50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); border-color: #f59e0b; }
+          100% { box-shadow: 0 0 0 0px rgba(245, 158, 11, 0); border-color: #f59e0b; }
+        }
+        .order-highlight { animation: borderGlowPulse 2.5s infinite ease-in-out; border-width: 3px !important; }
+
         @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-3px); } 100% { transform: translateY(0px); } }
         .floating-badge { animation: float 3s ease-in-out infinite; }
         
@@ -630,7 +642,6 @@ export default function App() {
         .falling-icon { position: fixed; z-index: 10; animation: fall linear infinite; pointer-events: none; font-size: 1.5rem; opacity: 0.6; }
       `}</style>
 
-      {/* --- Floating Theme Decorations --- */}
       {storeSettings.theme && storeSettings.theme !== 'default' && currentThemeData.icons && (
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
           {[...Array(12)].map((_, i) => (
@@ -652,22 +663,24 @@ export default function App() {
            {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
            <div>
              <h1 className="font-serif font-bold text-lg leading-tight text-primary">วัวนมอารมณ์ดี</h1>
+             
+             {/* 🌟 ส่วนที่แก้ไข: สลับตำแหน่ง ชื่อ LINE และ ป้ายสถานะร้านค้า */}
              <div className="flex items-center gap-1 mt-1">
+               <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || 'ลูกค้าทั่วไป').slice(0, 10)}</p>
                <span className={`text-[8px] px-2 py-0.5 rounded-full font-bold text-white shadow-sm flex items-center gap-1 ${storeSettings.isStoreOpen !== false ? 'bg-green-500' : 'bg-red-500'}`}>
                  {storeSettings.isStoreOpen !== false ? '🟢 เปิดแล้วค่ะ' : '🔴 ปิดแล้วค่ะ'}
                </span>
-               {(lineProfile.userId || '').startsWith('guest_') ? (
-                 <button onClick={handleLineLogin} className="text-[9px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-sm"><LogIn size={10}/> ล็อกอิน</button>
-               ) : (
-                 <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || '').slice(0, 10)}</p>
-               )}
              </div>
            </div>
         </div>
         <div className="flex gap-2">
           <button onClick={() => {
-            if (localStorage.getItem('happycow_isAdmin') === 'true') setView('admin');
-            else setShowAdminModal(true);
+            if (localStorage.getItem('happycow_isAdmin') === 'true') {
+              setView('admin');
+              setAdminTab('orders'); // เมื่อแอดมินคลิกที่การตั้งค่า ให้ไปที่หน้าคำสั่งซื้อเสมอ
+            } else {
+              setShowAdminModal(true);
+            }
           }} className="p-2 text-gray-400 hover:text-primary transition-colors"><Settings size={18}/></button>
           <button onClick={() => setView('myOrders')} className="p-2 text-gray-400 hover:text-primary transition-colors"><ClipboardList/></button>
           <button onClick={() => setView('cart')} className="relative p-2 bg-primary text-white rounded-xl w-10 h-10 flex items-center justify-center shadow-lg active:scale-90 transition-all">
@@ -680,6 +693,7 @@ export default function App() {
       {isSearchFocused && view === 'shop' && <div className="fixed inset-0 z-[40] bg-black/10 backdrop-blur-sm" onClick={() => setIsSearchFocused(false)}></div>}
 
       <main className="flex-1 pb-10 relative z-10">
+        {/* --- Shop View --- */}
         {view === 'shop' && (
           <div className="animate-in fade-in">
             <div className="px-5 pt-4 pb-2 sticky top-[73px] z-[45]" style={{ backgroundColor: currentThemeData.bg }}>
@@ -690,7 +704,6 @@ export default function App() {
                    value={searchQuery} 
                    onChange={e => setSearchQuery(e.target.value)}
                    onFocus={() => setIsSearchFocused(true)}
-                   onKeyDown={e => { if (e.key === 'Enter') handleSearchSubmit(searchQuery); }}
                    placeholder="ค้นหาเมนูที่คุณอยากดื่ม..." 
                    className="w-full pl-11 pr-10 py-3.5 rounded-[1.5rem] text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-gray-100 bg-white/90 backdrop-blur-sm" 
                 />
@@ -787,7 +800,7 @@ export default function App() {
 
             <div className="px-5 pb-5 pt-2">
               {searchQuery && <p className="text-sm font-bold text-primary mb-4 ml-1">ผลการค้นหา "{searchQuery}" ({displayedItems.length} รายการ)</p>}
-              {isLoading ? <div className="p-20 text-center opacity-30 italic font-bold text-primary">กำลังเตรียมเมนูแสนอร่อย... 🐮</div> : (
+              {isLoading ? <div className="p-20 text-center opacity-30 italic font-bold text-primary animate-pulse">กำลังโหลดความสดชื่น... 🐮</div> : (
                 <div className="grid grid-cols-2 gap-5">
                   {displayedItems.map((item, index) => {
                     const isSpecial = item.category === 'วิปครีมและครีมชีส' || item.category === 'ครีมและครีมชีส' || item.category === 'เมนูพิเศษ';
@@ -850,7 +863,7 @@ export default function App() {
 
         {/* --- Cart View --- */}
         {view === 'cart' && (
-          <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl animate-in slide-in-from-bottom-10 relative z-20">
+          <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl relative z-20">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm hover:text-primary transition-colors"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
             <h2 className="text-3xl font-serif font-bold text-primary">ตะกร้าของคุณ</h2>
             <div className="space-y-4">
@@ -873,9 +886,11 @@ export default function App() {
               <div className="space-y-6 pt-6 border-t border-gray-100">
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-accent uppercase tracking-wider block">วิธีชำระเงิน</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button onClick={() => setPaymentMethod('promptpay')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><CreditCard size={20}/><span className="text-[10px]">โอนพร้อมเพย์</span></button>
-                    <button onClick={() => setPaymentMethod('cash')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><Banknote size={20}/><span className="text-[10px]">ชำระเงินสด</span></button>
+                  {/* ปรับปรุงโครงสร้างเป็น 3 ปุ่มเพื่อรองรับ "ไทยช่วยไทยพลัส" อย่างงดงาม */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => setPaymentMethod('promptpay')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><CreditCard size={18}/><span className="text-[9px] text-center leading-tight">โอนพร้อมเพย์</span></button>
+                    <button onClick={() => setPaymentMethod('cash')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><Banknote size={18}/><span className="text-[9px] text-center leading-tight">ชำระเงินสด</span></button>
+                    <button onClick={() => setPaymentMethod('thaichueithai')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'thaichueithai' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><Sparkles size={18} className="text-orange-500" fill="currentColor"/><span className="text-[9px] text-center leading-tight">ไทยช่วยไทยพลัส</span></button>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -893,9 +908,9 @@ export default function App() {
                   <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center relative overflow-hidden">
                     <p className="text-xs font-bold mb-4 text-primary">สแกนชำระเงิน พร้อมแนบสลิป</p>
                     {storeSettings.qrCodeImage ? (
-                      <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" alt="QR Code" />
+                      <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" alt="QR Code ร้าน" />
                     ) : (
-                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cartTotal}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" alt="QR Code Automatic" />
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cartTotal}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" alt="QR Code อัตโนมัติ" />
                     )}
                     
                     <div className="flex items-center justify-center gap-2 mb-6">
@@ -916,7 +931,7 @@ export default function App() {
                            try {
                              const comp = await compressImage(file);
                              setSlipImage(comp);
-                             setTimeout(() => setSlipStatus('valid'), 2000);
+                             setTimeout(() => setSlipStatus('valid'), 1000);
                            } catch (err) {
                              console.error(err);
                              setSlipStatus('idle');
@@ -931,38 +946,114 @@ export default function App() {
                           {slipStatus === 'checking' && (
                              <div className="flex flex-col items-center gap-2 text-blue-500 animate-pulse">
                                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                               <span className="text-[10px] font-bold">กำลังตรวจสอบความถูกต้องของสลิปด้วยระบบ AI...</span>
+                               <span className="text-[10px] font-bold">กำลังตรวจสอบความถูกต้องของสลิป...</span>
                              </div>
                           )}
                           {slipStatus === 'valid' && (
                              <div className="bg-green-50 text-green-600 p-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-green-100 animate-in zoom-in">
-                               <CheckCircle size={14}/> ยอดเงิน ฿{cartTotal} ตรงกับออร์เดอร์ (จำลองตรวจ AI)
+                               <CheckCircle size={14}/> ตรวจพบสลิปเรียบร้อย
                              </div>
                           )}
                        </div>
                     )}
                   </div>
                 )}
+
+                {/* แสดงกล่องแจ้งข้อความพิเศษเมื่อเลือกชำระเงินด้วยไทยช่วยไทยพลัส */}
+                {paymentMethod === 'thaichueithai' && (
+                  <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 text-center relative overflow-hidden animate-in fade-in zoom-in-95">
+                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Sparkles className="text-orange-500" size={24} fill="currentColor" />
+                    </div>
+                    <p className="text-sm font-bold text-orange-900 leading-snug mb-1">ชำระเงินด้วยไทยช่วยไทยพลัส</p>
+                    <p className="text-xs text-orange-700 font-semibold leading-relaxed">
+                      หากลูกค้าชำระเงินด้วยไทยช่วยไทยพลัส <br/>
+                      <span className="text-red-500 font-bold underline">แอดมินจะส่งคิวอาร์โค้ดให้ใน LINE นะคะ 🐮💖</span>
+                    </p>
+                    <p className="text-[9.5px] text-gray-400 mt-4 leading-normal">*กรุณากดสั่งซื้อด้านล่างเพื่อบันทึกข้อมูลออเดอร์ในระบบก่อนค่ะ</p>
+                  </div>
+                )}
                 
-                <label className={`flex items-start gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer shadow-sm ${acceptedTerms ? 'border-green-400 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                <label className="flex items-start gap-3 p-4 rounded-2xl border bg-gray-50 transition-all cursor-pointer shadow-sm">
                   <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 w-5 h-5 accent-green-600 cursor-pointer flex-shrink-0" />
                   <div className="flex-1">
-                    <p className={`text-xs font-bold ${acceptedTerms ? 'text-green-700' : 'text-red-600'} mb-1`}>ฉันรับทราบและยอมรับเงื่อนไข</p>
+                    <p className="text-xs font-bold text-primary mb-1">ยอมรับเงื่อนไขการส่งและสั่งซื้อ</p>
                     <ul className="text-[9.5px] text-gray-600 space-y-1 list-disc pl-3 font-medium">
-                      <li>ส่งหน้าห้องเฉพาะเข้าตึกได้ (เข้าไม่ได้/ฝนตก = <span className="font-bold text-red-500">แขวนใต้ตึก</span>)</li>
-                      <li>รอออร์เดอร์ 20 นาที (+/-) / จัดส่งตามคิว <span className="text-red-500 font-bold">งดเร่ง</span></li>
+                      <li>ส่งหน้าห้องเฉพาะเข้าตึกได้ (เข้าไม่ได้/ฝนตก = แขวนใต้ตึก)</li>
+                      <li>รอออร์เดอร์ 20 นาที (+/-) / จัดส่งตามคิว งดเร่ง</li>
                     </ul>
                   </div>
                 </label>
                 
+                {/* 🌟 ใช้งานปุ่มสั่งซื้อ Smart Fail-Safe 100% */}
                 {storeSettings.isStoreOpen !== false ? (
-                  <button onClick={handleOrder} disabled={isLoading || (paymentMethod === 'promptpay' && (!slipImage || slipStatus === 'checking')) || !acceptedTerms} className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 flex justify-center items-center gap-2 ${ (paymentMethod === 'cash' || (slipImage && slipStatus === 'valid')) && acceptedTerms ? 'bg-accent text-white hover:opacity-90' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                     {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
-                     {isLoading ? 'กำลังประมวลผล...' : `สั่งซื้อสินค้า • ฿${cartTotal}`}
+                  <button 
+                    onClick={async () => {
+                      if (!address) return showAlert("กรุณากรอกที่อยู่จัดส่งครับ");
+                      if (paymentMethod === 'promptpay' && !slipImage) return showAlert("กรุณาแนบสลิปการโอนเงินครับ");
+                      
+                      setIsLoading(true);
+                      const total = cartTotal;
+                      
+                      try {
+                        const orderRef = await addDoc(collection(db, 'orders'), {
+                          items: cart, total, status: 'pending', timestamp: Date.now(),
+                          userId: lineProfile.userId || "guest_user", lineName: lineProfile.displayName || "ลูกค้าทั่วไป", address, note,
+                          slipImage: paymentMethod === 'promptpay' ? slipImage : (paymentMethod === 'thaichueithai' ? 'thaichueithai_payment' : 'cash_payment'), 
+                          paymentMethod
+                        });
+
+                        // เพิ่มพารามิเตอร์ orderId ไปในลิงก์เพื่อพาแอดมินเข้าเช็คบิลได้ทันที
+                        const orderLink = `https://liff.line.me/${LIFF_ID}?action=viewOrders&orderId=${orderRef.id}`;
+                        const orderSummaryText = `วัวนมอารมณ์ดี 🐮\nบิลเลขที่: #${orderRef.id.slice(0, 6)}\nลูกค้า: คุณ ${lineProfile.displayName || "ลูกค้าทั่วไป"}\n` + 
+                          cart.map(i => `- ${i.qty}x ${i.name} (หวาน ${i.sweetness})`).join('\n') + 
+                          `\nยอดรวม: ฿${total}\nที่อยู่: ${address}\nช่องทาง: ${paymentMethod === 'cash' ? 'ชำระเงินสด' : (paymentMethod === 'thaichueithai' ? 'ไทยช่วยไทยพลัส' : 'โอนพร้อมเพย์')}\nหมายเหตุ: ${note || '-'}\n\n📄 เช็คบิล: ${orderLink}`;
+
+                        try { await navigator.clipboard.writeText(orderSummaryText); } catch (e) { console.warn(e); }
+
+                        let liffSuccess = false;
+                        if (window.liff && window.liff.isLoggedIn() && window.liff.isInClient() && window.liff.isApiAvailable('shareTargetPicker')) {
+                           try {
+                             const res = await window.liff.shareTargetPicker([{
+                               type: "flex",
+                               altText: `🐮 ออร์เดอร์ใหม่จากคุณ ${lineProfile.displayName || "ลูกค้าทั่วไป"} (฿${total})`,
+                               contents: {
+                                 type: "bubble",
+                                 header: { type: "box", layout: "vertical", backgroundColor: "#3D2C1E", contents: [{ type: "text", text: "วัวนมอารมณ์ดี 🐮", color: "#ffffff", weight: "bold", size: "lg", align: "center" }] },
+                                 body: { type: "box", layout: "vertical", spacing: "md", contents: [{ type: "text", text: `คุณ: ${lineProfile.displayName || "ลูกค้าทั่วไป"}`, weight: "bold" }, { type: "text", text: `ยอดรวม: ฿${total}`, color: "#dc2626", weight: "bold" }] }
+                               }
+                             }]);
+                             if (res) liffSuccess = true;
+                           } catch (err) {
+                             console.log("LIFF Picker Error:", err);
+                           }
+                        }
+
+                        setCart([]); setSlipImage(''); setSlipStatus('idle'); setAddress(''); setNote(''); setAcceptedTerms(false);
+
+                        if (liffSuccess) {
+                           setView('myOrders');
+                           showAlert("สั่งซื้อสำเร็จและแชร์บิลเข้าไลน์แอดมินเรียบร้อยแล้ว! 🐮🎉");
+                        } else {
+                           setSuccessModalData({
+                              orderId: orderRef.id,
+                              text: orderSummaryText
+                           });
+                        }
+                      } catch (err) {
+                        showAlert("เกิดข้อผิดพลาดในการบันทึก: " + (err.message || err));
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    }}
+                    disabled={isLoading || !acceptedTerms || (paymentMethod === 'promptpay' && !slipImage)} 
+                    className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 flex justify-center items-center gap-2 ${acceptedTerms && !isLoading && !(paymentMethod === 'promptpay' && !slipImage) ? 'bg-accent text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                  >
+                     {isLoading ? 'กำลังประมวลผล...' : `ยืนยันการสั่งซื้อ • ฿${cartTotal}`}
                   </button>
                 ) : (
-                  <button disabled className="w-full py-5 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg shadow-xl cursor-not-allowed flex items-center justify-center gap-2">
-                     <AlertCircle size={20}/> ร้านปิดรับออเดอร์ชั่วคราว
+                  <button disabled className="w-full py-5 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg cursor-not-allowed">
+                     ร้านปิดรับออเดอร์ชั่วคราว
                   </button>
                 )}
               </div>
@@ -984,7 +1075,7 @@ export default function App() {
              ) : (
                  <div className="space-y-6">
                    {orders.filter(o => o.userId === lineProfile.userId).map(o => (
-                       <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
+                       <div key={o.id} className={`bg-white p-6 rounded-[2.5rem] shadow-sm border transition-all duration-500 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : 'border-gray-100'}`}>
                           <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
                             <div><span className="text-[10px] font-bold text-accent uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span><p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p></div>
                             <div className="text-2xl font-serif font-bold text-primary">฿{o.total}</div>
@@ -1001,13 +1092,13 @@ export default function App() {
                             <div className="mt-4 pt-4 border-t border-gray-100">
                               {o.deliveryMessage && (
                                 <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mb-3">
-                                  <p className="text-[10px] font-bold text-accent mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากแอดมิน:</p>
+                                  <p className="text-[10px] font-bold text-accent mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากทางร้าน:</p>
                                   <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
                                 </div>
                               )}
                               {o.deliveryImage && (
                                 <button onClick={() => setSelectedSlip(o.deliveryImage)} className="w-full bg-primary text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all">
-                                   <Camera size={16}/> ดูรูปถ่ายตอนจัดส่ง
+                                   <Camera size={16}/> ดูรูปถ่ายตอนจัดส่งสินค้า
                                 </button>
                               )}
                             </div>
@@ -1019,13 +1110,13 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Admin Tab --- */}
+        {/* --- Admin View --- */}
         {view === 'admin' && (
           <div className="p-6 bg-white min-h-screen animate-in fade-in relative z-20">
             <button onClick={() => setView('shop')} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6 hover:text-primary"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
             <div className="flex justify-between items-center mb-6">
-               <h2 className="text-2xl font-serif font-bold text-primary">ระบบแอดมิน</h2>
-               <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95"><BellRing size={12}/> เปิด/เทสเสียงแจ้งเตือน</button>
+               <h2 className="text-2xl font-serif font-bold text-primary">ระบบแอดมินร้าน</h2>
+               <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95"><BellRing size={12}/> เทสเสียงเตือนบิล</button>
             </div>
             
             <div className="flex gap-1 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner">
@@ -1036,7 +1127,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* TAB: รายรับ (Dashboard) */}
+            {/* TAB: Dashboard รายรับ */}
             {adminTab === 'dashboard' && (
               <div className="space-y-6 animate-in fade-in">
                 <div className="bg-primary text-white p-6 rounded-[2.5rem] shadow-xl">
@@ -1070,23 +1161,32 @@ export default function App() {
                    </div>
                 </div>
 
-                <div className="pt-4">
-                  <button onClick={exportToCSV} className="w-full bg-[#0F9D58] text-white py-5 rounded-[2rem] font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                    <Download size={18} /> Export บัญชีรายรับ (CSV)
-                  </button>
-                  <p className="text-center text-[10px] text-gray-400 mt-3">*นำไฟล์ CSV ไปเปิดใน Google Sheets หรือ Excel เพื่อดูสรุปบัญชีได้เลยครับ</p>
-                </div>
+                <button onClick={exportToCSV} className="w-full bg-[#0F9D58] text-white py-5 rounded-[2rem] font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mt-4">
+                  <Download size={18} /> Export บัญชีรายรับ (CSV)
+                </button>
               </div>
             )}
 
-            {/* TAB: ออร์เดอร์ */}
+            {/* TAB: ตรวจสอบออร์เดอร์ของแอดมิน */}
             {adminTab === 'orders' && (
               <div className="space-y-4">
-                {orders.map((o, idx) => (
-                    <div key={o.id} className={`border p-5 rounded-3xl shadow-sm bg-white animate-in fade-in transition-colors ${o.status === 'pending' ? 'border-orange-300 bg-orange-50/30' : 'border-gray-100'}`}>
+                {/* ช่องกรอกค้นหาและควบคุมตัวกรองออเดอร์ของแอดมิน */}
+                <div className="bg-gray-50 p-2 rounded-2xl border border-gray-100 relative mb-4">
+                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหารหัสบิล, ชื่อ หรือที่อยู่ลูกค้า..." className="w-full pl-10 pr-10 py-3 rounded-xl text-xs outline-none bg-white"/>
+                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1 rounded-full"><X size={12}/></button>}
+                </div>
+
+                {filteredOrders.map((o, idx) => (
+                    <div key={o.id} className={`border p-5 rounded-3xl shadow-sm bg-white animate-in fade-in transition-all duration-500 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : o.status === 'pending' ? 'border-orange-300 bg-orange-50/30' : 'border-gray-100'}`}>
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2"><span className="bg-primary text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{orders.length - idx}</span><span className="font-bold text-sm text-primary">{o.lineName}</span></div>
-                        <div className="text-right"><span className="text-orange-600 font-bold block">฿{o.total}</span><span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{o.paymentMethod === 'cash' ? '💵 จ่ายสด' : '📱 โอนเงิน'}</span></div>
+                        <div className="flex items-center gap-2"><span className="bg-primary text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{orders.length - orders.indexOf(orders.find(item=>item.id===o.id))}</span><span className="font-bold text-sm text-primary">{o.lineName}</span></div>
+                        <div className="text-right">
+                          <span className="text-orange-600 font-bold block">฿{o.total}</span>
+                          <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">
+                            {o.paymentMethod === 'cash' ? '💵 จ่ายสด' : (o.paymentMethod === 'thaichueithai' ? '🇹🇭 ไทยช่วยไทยพลัส' : '📱 โอนเงิน')}
+                          </span>
+                        </div>
                       </div>
                       <div className="text-[10px] text-gray-500 mb-3 flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100"><MapPin size={12} className="flex-shrink-0 text-accent"/> {o.address}</div>
                       
@@ -1098,7 +1198,8 @@ export default function App() {
                       ))}</div>
 
                       <div className="grid grid-cols-2 gap-2 mb-2 mt-4">
-                        {o.paymentMethod !== 'cash' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ตรวจสลิป</button>}
+                        {/* ตรวจสอบให้แสดงปุ่มตรวจสอบสลิปเฉพาะตอนที่เป็นโอนพร้อมเพย์เท่านั้น เพื่อหลีกเลี่ยงการเปิดสลิปเปล่าในกรณีจ่ายสดหรือไทยช่วยไทยพลัส */}
+                        {o.paymentMethod === 'promptpay' && <button onClick={() => setSelectedSlip(o.slipImage)} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"><Eye size={14}/> ตรวจสลิป</button>}
                         <button onClick={() => deleteDoc(doc(db, 'orders', o.id))} className="bg-red-50 text-red-500 py-3 rounded-xl flex items-center justify-center active:scale-95 transition-all"><Trash2 size={16}/></button>
                       </div>
 
@@ -1107,30 +1208,39 @@ export default function App() {
                         
                         {o.status === 'cooking' && (
                           <button onClick={() => { setDeliveryModal(o); setDeliveryImage(''); setDeliveryLocation('room'); }} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-95 transition-all">
-                             <Check size={14}/> ส่งสินค้าแล้ว
+                             <Check size={14}/> จัดส่ง/ลูกค้ารับแล้ว
                           </button>
                         )}
                         
-                        {o.status === 'completed' && <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จแล้ว</div>}
+                        {o.status === 'completed' && <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จเรียบร้อย</div>}
                       </div>
                     </div>
                 ))}
-                {orders.length === 0 && <div className="py-20 text-center text-gray-400 font-bold opacity-50">ยังไม่มีออร์เดอร์ใหม่ 🐮</div>}
+                {filteredOrders.length === 0 && <div className="py-20 text-center text-gray-400 font-bold opacity-50">ไม่พบข้อมูลออร์เดอร์ 🐮</div>}
               </div>
             )}
 
-            {/* TAB: เมนู */}
+            {/* TAB: ระบบจัดการคลังเมนูของร้าน */}
             {adminTab === 'menus' && (
               <div className="space-y-8 animate-in fade-in">
+                
+                {/* 🌟 ปุ่ม Export CSV เมนู */}
+                <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col items-center text-center">
+                  <div className="bg-blue-50 p-4 rounded-full text-blue-500 mb-3">
+                     <ClipboardList size={28} />
+                  </div>
+                  <h3 className="font-bold text-sm text-primary mb-1">ส่งออกรายการเมนู (Excel/CSV)</h3>
+                  <p className="text-[10px] text-gray-500 mb-5 leading-relaxed">
+                     ดาวน์โหลดรายชื่อเครื่องดื่ม ราคา และสถานะทั้งหมด <br/>ออกเป็นไฟล์ตาราง นำไปใช้งานต่อได้ทันที
+                  </p>
+                  <button onClick={exportMenuToCSV} className="w-full bg-blue-500 text-white py-4 rounded-2xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-blue-600">
+                     <Download size={18} /> โหลดรายการเมนูลงเครื่อง
+                  </button>
+                </div>
+
                 <div className="bg-white p-2 rounded-3xl shadow-sm border border-gray-100 relative">
                    <Search size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" />
-                   <input 
-                      type="text" 
-                      value={adminSearchQuery} 
-                      onChange={e => setAdminSearchQuery(e.target.value)} 
-                      placeholder="ค้นหาชื่อเมนู เพื่อแก้ไข..." 
-                      className="w-full pl-12 pr-10 py-4 rounded-2xl text-sm outline-none bg-white focus:ring-2 focus:ring-[var(--theme-accent)] transition-all"
-                   />
+                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหาชื่อเมนู เพื่อแก้ไข..." className="w-full pl-12 pr-10 py-4 rounded-2xl text-sm outline-none bg-white focus:ring-2 focus:ring-[var(--theme-accent)] transition-all"/>
                    {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1.5 rounded-full hover:bg-gray-200"><X size={14}/></button>}
                 </div>
 
@@ -1145,10 +1255,10 @@ export default function App() {
                         <h3 className="font-bold text-sm text-accent uppercase tracking-widest flex items-center gap-2"><Plus size={16}/> เพิ่มเมนูใหม่</h3>
                         <button onClick={() => setShowAddMenuForm(false)} className="text-gray-400 p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={16}/></button>
                       </div>
-                      <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
+                      <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent bg-white" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
                       
                       <div className="flex gap-2">
-                        <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
+                        <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent bg-white" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
                         
                         <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
                           {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
@@ -1225,8 +1335,8 @@ export default function App() {
                         <button onClick={() => setShowAddToppingForm(false)} className="text-orange-400 p-1 hover:bg-orange-200 rounded-full transition-colors"><X size={16}/></button>
                       </div>
                       <div className="flex gap-2">
-                        <input type="text" placeholder="ชื่อท็อปปิ้ง (เช่น วิปครีม)" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
-                        <input type="number" placeholder="ราคา" className="w-1/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
+                        <input type="text" placeholder="ชื่อท็อปปิ้ง (เช่น วิปครีม)" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
+                        <input type="number" placeholder="ราคา" className="w-1/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
                       </div>
                       <button onClick={handleAddTopping} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all hover:bg-orange-600">บันทึกท็อปปิ้งใหม่</button>
                     </div>
@@ -1300,12 +1410,20 @@ export default function App() {
                               <div className="flex gap-2 z-10">
                                 <button type="button" onClick={(e) => { 
                                   e.stopPropagation(); 
-                                  if (editingMenu && editingMenu.id === item.id) { setEditingMenu(null); } 
-                                  else { setEditingMenu(item); }
+                                  if (editingMenu && editingMenu.id === item.id) {
+                                    setEditingMenu(null); 
+                                  } else {
+                                    setEditingMenu(item); 
+                                  }
                                 }} className={`p-3 active:scale-90 transition-all rounded-xl ${editingMenu && editingMenu.id === item.id ? 'bg-orange-500 text-white shadow-md' : 'text-blue-500 hover:bg-blue-100 bg-blue-50'}`}>
                                   {editingMenu && editingMenu.id === item.id ? <X size={16}/> : <Edit size={16}/>}
                                 </button>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-3 text-red-500 hover:bg-red-100 active:scale-90 transition-all bg-red-50 rounded-xl"><Trash2 size={16}/></button>
+                                
+                                <button type="button" onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  handleDownloadImage(item.image, `menu_${item.name}.jpg`);
+                                }} className="p-3 text-green-500 hover:bg-green-100 active:scale-90 transition-all bg-green-50 rounded-xl" title="บันทึกรูปภาพเมนู"><Download size={16}/></button>
                               </div>
                             </div>
                             
@@ -1362,7 +1480,7 @@ export default function App() {
                                 </div>
 
                                 {editingMenu.allowBlend !== false && editingMenu.category !== 'สมูทตี้โยเกิร์ต' && editingMenu.category !== 'ผลไม้และสมูทตี้' && (
-                                  <div className="text-left mt-2">
+                                  <div className="mt-2 text-left">
                                     <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
                                     <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 transition-all bg-white border border-transparent" value={editingMenu.blendPrice} onChange={e => setEditingMenu({...editingMenu, blendPrice: e.target.value})} />
                                   </div>
@@ -1393,7 +1511,7 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB: ตั้งค่า */}
+            {/* TAB: ตั้งค่าบัญชีและธีมร้าน */}
             {adminTab === 'settings' && (
               <div className="space-y-8 animate-in fade-in">
                 <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[2.5rem] border-2 border-dashed border-indigo-200 space-y-4 shadow-inner relative overflow-hidden">
@@ -1427,8 +1545,8 @@ export default function App() {
                               <button onClick={async () => {
                                  try { 
                                     await setDoc(doc(db, 'settings', 'store'), { customBgImage: editCustomBgImage }, { merge: true }); 
-                                    alert('บันทึกรูปพื้นหลังสำเร็จ! 🎨 ลูกค้าจะเห็นพื้นหลังนี้ทันทีครับ'); 
-                                 } catch(e) { alert(e.message); }
+                                    showAlert('บันทึกรูปพื้นหลังสำเร็จ! 🎨 ลูกค้าจะเห็นพื้นหลังนี้ทันทีครับ'); 
+                                 } catch(e) { showAlert(e.message); }
                               }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all">
                                  บันทึกรูปพื้นหลัง
                               </button>
@@ -1453,7 +1571,7 @@ export default function App() {
                         <p className="text-[10px] text-gray-500 mt-1">ปิดรับออร์เดอร์ที่เป็นเมนูปั่นทั้งหมด</p>
                       </div>
                       <input type="checkbox" checked={storeSettings.isBlendOut || false} onChange={async (e) => {
-                         try { await setDoc(doc(db, 'settings', 'store'), { isBlendOut: e.target.checked }, { merge: true }); } catch(err) { alert(err.message); }
+                         try { await setDoc(doc(db, 'settings', 'store'), { isBlendOut: e.target.checked }, { merge: true }); } catch(err) { showAlert(err.message); }
                       }} className="w-5 h-5 accent-orange-500 cursor-pointer" />
                     </label>
                   </div>
@@ -1461,6 +1579,7 @@ export default function App() {
 
                 <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
                   <h3 className="font-bold text-sm text-accent uppercase tracking-widest text-center">ตั้งค่าช่องทางชำระเงิน</h3>
+                  
                   <div>
                     <label className="text-xs text-gray-500 mb-2 block font-bold">หมายเลขพร้อมเพย์ (เบอร์โทร หรือ บัตรประชาชน)</label>
                     <input type="text" placeholder="เช่น 0812345678" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-accent border border-transparent transition-all" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} />
@@ -1476,14 +1595,14 @@ export default function App() {
                           if(file) { try { const compressedImage = await compressImage(file); setEditQrCodeImage(compressedImage); } catch(err) { console.error(err); } }
                         }} />
                       </label>
-                      {editQrCodeImage && <img src={editQrCodeImage} className="w-16 h-16 rounded-xl object-cover shadow-sm border border-gray-100" alt="QR Code Preview" />}
+                      {editQrCodeImage && <img src={editQrCodeImage} className="w-16 h-16 rounded-xl object-cover shadow-sm border border-gray-100" alt="QR Preview" />}
                       {editQrCodeImage && <button onClick={() => setEditQrCodeImage('')} className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-95"><Trash2 size={18}/></button>}
                     </div>
                     <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">*หากอัปโหลดรูป ระบบจะแสดงรูปนี้แทนการสร้าง QR Code อัตโนมัติในหน้าตะกร้าของลูกค้า</p>
                   </div>
 
                   <button onClick={async () => {
-                    try { await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true }); alert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮'); } catch(e) { alert("Error: " + e.message); }
+                    try { await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true }); showAlert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮'); } catch(e) { showAlert("Error: " + e.message); }
                   }} className="w-full bg-primary text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4 hover:opacity-90">
                     บันทึกการตั้งค่าร้าน
                   </button>
@@ -1491,6 +1610,7 @@ export default function App() {
 
                 <div className="bg-blue-50 p-6 rounded-[2.5rem] border-2 border-dashed border-blue-200 space-y-4 shadow-inner relative">
                   <h3 className="font-bold text-sm text-blue-700 uppercase tracking-widest text-center flex items-center justify-center gap-2"><BellRing size={16}/> แจ้งเตือนออร์เดอร์ (LINE แอดมิน)</h3>
+                  
                   <div className="mt-2">
                     <label className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-50">
                       <div>
@@ -1504,15 +1624,15 @@ export default function App() {
                   <div className={`transition-all ${editNotifyAdmin ? 'opacity-100 h-auto' : 'opacity-40 h-auto pointer-events-none'}`}>
                     <label className="text-[11px] text-gray-500 mb-2 block font-bold">LINE User ID ของแอดมิน</label>
                     <div className="flex gap-2">
-                       <input type="text" placeholder="ระบบจะดึงให้อัตโนมัติ..." className="flex-1 p-4 rounded-2xl text-[10px] outline-none shadow-sm focus:ring-2 focus:ring-blue-400 border border-transparent transition-all bg-white text-gray-500" value={editAdminLineId} readOnly />
+                       <input type="text" placeholder="ระบบจะดึงให้อัตโนมัติ..." className="flex-1 p-4 rounded-2xl text-[10px] outline-none shadow-sm focus:ring-2 focus:ring-blue-400 border border-transparent transition-all bg-white text-gray-500" value={editAdminLineId} onChange={e => setEditAdminLineId(e.target.value)} readOnly />
                        <button onClick={() => setEditAdminLineId(lineProfile.userId)} className="bg-blue-500 text-white px-3 rounded-2xl text-[10px] font-bold shadow-sm active:scale-95 whitespace-nowrap hover:bg-blue-600 transition-colors">ดึง LINE ID ของฉัน</button>
                     </div>
                     <p className="text-[9px] text-blue-600 font-bold mt-2 leading-relaxed bg-blue-100/50 p-2 rounded-lg border border-blue-100">* ให้คุณแอดมินเปิดระบบนี้จาก <b>มือถือเครื่องที่จะรับแจ้งเตือน</b> แล้วกดปุ่ม "ดึง LINE ID ของฉัน" จากนั้นกดบันทึกด้านล่างได้เลยครับ</p>
                   </div>
 
                   <button onClick={async () => {
-                    if (editNotifyAdmin && !editAdminLineId) return alert('กรุณากดดึง LINE ID ก่อนบันทึกครับ');
-                    try { await setDoc(doc(db, 'settings', 'store'), { notifyAdmin: editNotifyAdmin, adminLineId: editAdminLineId }, { merge: true }); alert('อัปเดตการแจ้งเตือนสำเร็จ! 🎉'); } catch(e) { alert("Error: " + e.message); }
+                    if (editNotifyAdmin && !editAdminLineId) return showAlert('กรุณากดดึง LINE ID ก่อนบันทึกครับ');
+                    try { await setDoc(doc(db, 'settings', 'store'), { notifyAdmin: editNotifyAdmin, adminLineId: editAdminLineId }, { merge: true }); showAlert('อัปเดตการแจ้งเตือนสำเร็จ! 🎉'); } catch(e) { showAlert("Error: " + e.message); }
                   }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4 hover:opacity-90">
                     บันทึกการแจ้งเตือน
                   </button>
@@ -1523,112 +1643,119 @@ export default function App() {
         )}
       </main>
 
-      {/* --- Modal ตัวเลือกสินค้า --- */}
+      {/* --- --- Modal เลือกออปชันเมนูเครื่องดื่มตอนสั่งซื้อ --- --- */}
       {optionModalItem && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-[3.5rem] w-full max-w-md p-10 space-y-10 animate-in slide-in-from-bottom-full duration-500 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-primary">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600"><X/></button></div>
-            <div className="space-y-8">
-              <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
-                <div className="grid grid-cols-3 gap-2">{SWEETNESS.map(l => (
-                    <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>{l}</button>
-                ))}</div>
-              </div>
-
-              {optionModalItem.category === 'กาแฟ' && (
-                <div className="space-y-4">
-                   <div>
-                     <label className="text-[10px] font-bold block mb-4 text-[#5c3a21] uppercase tracking-widest flex items-center gap-1"><Coffee size={14} fill="currentColor"/> เลือกระดับการคั่วเมล็ดกาแฟ</label>
-                     <div className="grid grid-cols-2 gap-3">
-                       <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วกลาง'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วกลาง' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วกลาง<br/><span className="text-[9px] font-normal">หอมนุ่ม ละมุน</span></button>
-                       <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วเข้ม'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วเข้ม' ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วเข้ม<br/><span className="text-[9px] font-normal">เข้มข้น ถึงใจ</span></button>
-                     </div>
-                   </div>
-                   
-                   <label className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${tempOptions.addShot ? 'border-accent bg-[var(--theme-bg)]' : 'border-gray-50 bg-gray-50 hover:bg-gray-100'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-md flex items-center justify-center ${tempOptions.addShot ? 'bg-accent text-white' : 'bg-white border-2 border-gray-200'}`}>
-                          {tempOptions.addShot && <CheckCircle size={14} />}
-                        </div>
-                        <span className={`text-sm font-bold ${tempOptions.addShot ? 'text-primary' : 'text-gray-500'}`}>เพิ่มช็อตกาแฟ</span>
-                      </div>
-                      <span className="text-sm font-bold text-accent">+฿20</span>
-                      <input type="checkbox" className="hidden" checked={tempOptions.addShot || false} onChange={(e) => setTempOptions({...tempOptions, addShot: e.target.checked})} />
-                   </label>
-                </div>
-              )}
-
-              {optionModalItem.hasTeaType && (
-                <div className="space-y-4">
-                   <div>
-                     <label className="text-[10px] font-bold block mb-4 text-[#4a5d23] uppercase tracking-widest flex items-center gap-1">🍵 เลือกรสชาติผงชา</label>
-                     <div className="grid grid-cols-2 gap-3">
-                       <button onClick={() => setTempOptions({...tempOptions, teaType: 'มัทฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'มัทฉะ' ? 'bg-[#4a5d23] text-white border-[#4a5d23] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>มัทฉะ<br/><span className="text-[9px] font-normal">หอมเข้มข้น ดั้งเดิม</span></button>
-                       <button onClick={() => setTempOptions({...tempOptions, teaType: 'โฮจิฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'โฮจิฉะ' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>โฮจิฉะ<br/><span className="text-[9px] font-normal">หอมคั่ว ละมุน</span></button>
-                     </div>
-                   </div>
-                </div>
-              )}
-
-              {optionModalItem.hasFreePearl && (
-                <div>
-                   <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> แถมมุกฟรี!</label>
-                   <div className="grid grid-cols-2 gap-3">
-                     <button onClick={() => setTempOptions({...tempOptions, addPearl: true})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.addPearl ? 'bg-orange-400 text-white border-orange-400 shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>รับมุก (ฟรี)</button>
-                     <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${!tempOptions.addPearl ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>ไม่รับมุกฟรี</button>
-                   </div>
-                </div>
-              )}
-
-              {toppings.length > 0 && optionModalItem.allowTopping !== false && (
-                <div>
-                  <label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">เพิ่มท็อปปิ้งอื่นๆ</label>
-                  <div className="space-y-2">
-                    {toppings.map(t => {
-                      const isSelected = tempOptions.selectedToppings?.find(st => st.id === t.id);
-                      return (
-                        <label key={t.id} className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-accent bg-[var(--theme-bg)]' : 'border-gray-50 bg-gray-50 hover:bg-gray-100'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isSelected ? 'bg-accent text-white' : 'bg-white border-2 border-gray-200'}`}>
-                              {isSelected && <CheckCircle size={14} />}
-                            </div>
-                            <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-500'}`}>{t.name}</span>
-                          </div>
-                          <span className="text-sm font-bold text-accent">+฿{t.price}</span>
-                          <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => {
-                            setTempOptions(prev => {
-                              const currentToppings = prev.selectedToppings || [];
-                              if (isSelected) return { ...prev, selectedToppings: currentToppings.filter(st => st.id !== t.id) };
-                              return { ...prev, selectedToppings: [...currentToppings, t] };
-                            });
-                          }} />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {optionModalItem.isOnlyBlend ? (
-                <div className="grid grid-cols-1 gap-5">
-                   <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : 'border-blue-400 bg-blue-50 text-blue-600 shadow-sm'}`}>
-                     <Zap size={32}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span>
-                     {storeSettings.isBlendOut && <span className="text-red-500 text-[10px] mt-1">วันนี้เมนูปั่นหมดค่ะ</span>}
-                   </button>
-                </div>
-              ) : optionModalItem.allowBlend !== false ? (
-                <div className="grid grid-cols-2 gap-5">
-                   <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
-                   <button onClick={() => !storeSettings.isBlendOut && setTempOptions({...tempOptions, isBlended: true})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : (tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50')}`}><Zap size={32}/><span className="text-xs uppercase text-center">{storeSettings.isBlendOut ? 'เมนูปั่นหมด' : `ปั่น ${getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}`}</span></button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-5">
-                   <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className="py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all border-accent bg-[var(--theme-bg)] text-primary shadow-sm"><Coffee size={32}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
-                </div>
-              )}
-            </div>
+          
+          <div className="bg-white rounded-t-[3.5rem] w-full max-w-md animate-in slide-in-from-bottom-full duration-500 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
             
-            {storeSettings.isStoreOpen !== false ? (
+            <div className="w-full h-[30vh] relative flex-shrink-0 bg-gray-50">
+              <img src={optionModalItem.image} alt={optionModalItem.name} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-white/10 to-transparent"></div>
+            </div>
+
+            <div className="p-10 pt-6 space-y-10 overflow-y-auto hide-scrollbar">
+              <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-primary">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400"><X/></button></div>
+              <div className="space-y-8">
+                <div><label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
+                  <div className="grid grid-cols-3 gap-2">{SWEETNESS.map(l => (
+                      <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>{l}</button>
+                  ))}</div>
+                </div>
+
+                {optionModalItem.category === 'กาแฟ' && (
+                  <div className="space-y-4">
+                     <div>
+                       <label className="text-[10px] font-bold block mb-4 text-[#5c3a21] uppercase tracking-widest flex items-center gap-1"><Coffee size={14} fill="currentColor"/> เลือกระดับการคั่วเมล็ดกาแฟ</label>
+                       <div className="grid grid-cols-2 gap-3">
+                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วกลาง'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วกลาง' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วกลาง<br/><span className="text-[9px] font-normal">หอมนุ่ม ละมุน</span></button>
+                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วเข้ม'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วเข้ม' ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วเข้ม<br/><span className="text-[9px] font-normal">เข้มข้น ถึงใจ</span></button>
+                       </div>
+                     </div>
+                     
+                     <label className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${tempOptions.addShot ? 'border-accent bg-[var(--theme-bg)]' : 'border-gray-50 bg-gray-50 hover:bg-gray-100'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center ${tempOptions.addShot ? 'bg-accent text-white' : 'bg-white border-2 border-gray-200'}`}>
+                            {tempOptions.addShot && <CheckCircle size={14} />}
+                          </div>
+                          <span className={`text-sm font-bold ${tempOptions.addShot ? 'text-primary' : 'text-gray-500'}`}>เพิ่มช็อตกาแฟ</span>
+                        </div>
+                        <span className="text-sm font-bold text-accent">+฿20</span>
+                        <input type="checkbox" className="hidden" checked={tempOptions.addShot || false} onChange={(e) => setTempOptions({...tempOptions, addShot: e.target.checked})} />
+                     </label>
+                  </div>
+                )}
+
+                {optionModalItem.hasTeaType && (
+                  <div className="space-y-4">
+                     <div>
+                       <label className="text-[10px] font-bold block mb-4 text-[#4a5d23] uppercase tracking-widest flex items-center gap-1">🍵 เลือกรสชาติผงชา</label>
+                       <div className="grid grid-cols-2 gap-3">
+                         <button onClick={() => setTempOptions({...tempOptions, teaType: 'มัทฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'มัทฉะ' ? 'bg-[#4a5d23] text-white border-[#4a5d23] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>มัทฉะ<br/><span className="text-[9px] font-normal">หอมเข้มข้น ดั้งเดิม</span></button>
+                         <button onClick={() => setTempOptions({...tempOptions, teaType: 'โฮจิฉะ'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.teaType === 'โฮจิฉะ' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>โฮจิฉะ<br/><span className="text-[9px] font-normal">หอมคั่ว ละมุน</span></button>
+                       </div>
+                     </div>
+                  </div>
+                )}
+
+                {optionModalItem.hasFreePearl && (
+                  <div>
+                     <label className="text-sm font-bold block mb-4 text-orange-400 uppercase tracking-widest text-[10px] flex items-center gap-1"><Star size={12} fill="currentColor"/> แถมมุกฟรี!</label>
+                     <div className="grid grid-cols-2 gap-3">
+                       <button onClick={() => setTempOptions({...tempOptions, addPearl: true})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.addPearl ? 'bg-orange-400 text-white border-orange-400 shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>รับมุก (ฟรี)</button>
+                       <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3.5 rounded-2xl text-[11px] font-bold border transition-all ${!tempOptions.addPearl ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>ไม่รับมุกฟรี</button>
+                     </div>
+                  </div>
+                )}
+
+                {toppings.length > 0 && optionModalItem.allowTopping !== false && (
+                  <div>
+                    <label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">เพิ่มท็อปปิ้งอื่นๆ</label>
+                    <div className="space-y-2">
+                      {toppings.map(t => {
+                        const isSelected = tempOptions.selectedToppings?.find(st => st.id === t.id);
+                        return (
+                          <label key={t.id} className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-accent bg-[var(--theme-bg)]' : 'border-gray-50 bg-gray-50 hover:bg-gray-100'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isSelected ? 'bg-accent text-white' : 'bg-white border-2 border-gray-200'}`}>
+                                {isSelected && <CheckCircle size={14} />}
+                              </div>
+                              <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-500'}`}>{t.name}</span>
+                            </div>
+                            <span className="text-sm font-bold text-accent">+฿{t.price}</span>
+                            <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => {
+                              setTempOptions(prev => {
+                                const currentToppings = prev.selectedToppings || [];
+                                if (isSelected) return { ...prev, selectedToppings: currentToppings.filter(st => st.id !== t.id) };
+                                return { ...prev, selectedToppings: [...currentToppings, t] };
+                              });
+                            }} />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {optionModalItem.isOnlyBlend ? (
+                  <div className="grid grid-cols-1 gap-5">
+                     <button onClick={() => setTempOptions({...tempOptions, isBlended: true})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : 'border-blue-400 bg-blue-50 text-blue-600 shadow-sm'}`}>
+                       <Zap size={32}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span>
+                       {storeSettings.isBlendOut && <span className="text-red-500 text-[10px] mt-1">วันนี้เมนูปั่นหมดค่ะ</span>}
+                     </button>
+                  </div>
+                ) : optionModalItem.allowBlend !== false ? (
+                  <div className="grid grid-cols-2 gap-5">
+                     <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น</span></button>
+                     <button onClick={() => !storeSettings.isBlendOut && setTempOptions({...tempOptions, isBlended: true})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : (tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50')}`}><Zap size={32}/><span className="text-xs uppercase text-center">{storeSettings.isBlendOut ? 'เมนูปั่นหมด' : `ปั่น ${getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}`}</span></button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-5">
+                     <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all border-accent bg-[var(--theme-bg)] text-primary shadow-sm`}><Coffee size={32}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
+                  </div>
+                )}
+              </div>
+              
               <button onClick={() => {
                   const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
                   const shotPrice = tempOptions.addShot ? 20 : 0;
@@ -1646,19 +1773,15 @@ export default function App() {
                     return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, isBlended: isItemBlended, qty: 1 }];
                   });
                   setOptionModalItem(null);
-                }} className="w-full py-6 bg-primary text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-xl transition-all sticky bottom-0 hover:opacity-90">
+                }} className="w-full py-6 bg-primary text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-xl hover:opacity-90 transition-all">
                   <Plus size={24}/> เพิ่มลงตะกร้า • ฿{optionModalItem.price + ((optionModalItem.isOnlyBlend || tempOptions.isBlended) ? getAddedBlendPrice(optionModalItem) : 0) + ((tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0)) + (tempOptions.addShot ? 20 : 0)}
               </button>
-            ) : (
-              <button disabled className="w-full py-6 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg flex items-center justify-center gap-3 shadow-xl sticky bottom-0 cursor-not-allowed">
-                  <AlertCircle size={20}/> ร้านปิดรับออเดอร์ชั่วคราว
-              </button>
-            )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal จัดการการส่งสินค้า (แอดมิน) */}
+      {/* Modal ถ่ายรูปยืนยันการส่งของ (แอดมินหลังบ้าน) */}
       {deliveryModal && (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm">
           <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 shadow-2xl space-y-6">
@@ -1669,25 +1792,28 @@ export default function App() {
 
             <div className="space-y-3">
                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">จุดส่งสินค้า</label>
-               <div className="grid grid-cols-2 gap-3">
-                 <button onClick={() => setDeliveryLocation('room')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'room' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Home size={24}/><span className="text-[10px]">ส่งหน้าห้อง</span></button>
-                 <button onClick={() => setDeliveryLocation('building')} className={`py-4 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'building' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Building size={24}/><span className="text-[10px]">ส่งหน้าตึก</span></button>
+               <div className="grid grid-cols-3 gap-2">
+                 <button onClick={() => setDeliveryLocation('room')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'room' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Home size={20}/><span className="text-[10px]">หน้าห้อง</span></button>
+                 <button onClick={() => setDeliveryLocation('building')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'building' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Building size={20}/><span className="text-[10px]">หน้าตึก</span></button>
+                 <button onClick={() => { setDeliveryLocation('pickup'); setDeliveryImage(''); }} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'pickup' ? 'border-green-400 bg-green-50 text-green-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><UserCheck size={20}/><span className="text-[10px]">รับเองที่ร้าน</span></button>
                </div>
             </div>
 
-            <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center">
-               <p className="text-xs font-bold mb-3 text-primary">แนบรูปถ่ายเป็นหลักฐาน</p>
-               <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all hover:border-accent hover:text-accent">
-                  <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกจากแกลเลอรี'}
-                  <input type="file" accept="image/*" className="hidden" onChange={async e => {
-                     const file = e.target.files[0];
-                     if(file){ try { setDeliveryImage(await compressImage(file)); } catch(err) { console.error(err); } }
-                  }} />
-               </label>
-               {deliveryImage && <img src={deliveryImage} className="mt-4 h-32 w-full object-cover rounded-xl shadow-sm border border-gray-100" alt="Delivery Proof"/>}
-            </div>
+            {deliveryLocation !== 'pickup' && (
+                <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center animate-in fade-in zoom-in-95">
+                   <p className="text-xs font-bold mb-3 text-primary">แนบรูปถ่ายเป็นหลักฐาน</p>
+                   <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all hover:border-accent hover:text-accent">
+                      <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกจากแกลเลอรี'}
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                         const file = e.target.files[0];
+                         if(file){ setDeliveryImage(await compressImage(file)); }
+                      }} />
+                   </label>
+                   {deliveryImage && <img src={deliveryImage} className="mt-4 h-32 w-full object-cover rounded-xl shadow-sm border border-gray-100" alt="Delivery Proof"/>}
+                </div>
+            )}
 
-            <button onClick={handleConfirmDelivery} disabled={isDelivering || !deliveryImage} className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${deliveryImage ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+            <button onClick={handleConfirmDelivery} disabled={isDelivering || (deliveryLocation !== 'pickup' && !deliveryImage)} className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${deliveryLocation === 'pickup' || deliveryImage ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                {isDelivering ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
                {isDelivering ? 'กำลังบันทึกและแจ้งเตือน...' : <><CheckCircle size={18}/> ยืนยันและแจ้งเตือนลูกค้า</>}
             </button>
@@ -1695,14 +1821,112 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal ดูรูปสลิป */}
-      {selectedSlip && selectedSlip !== 'cash_payment' && (
+      {/* Modal ดูรูปภาพสลิปแบบขยายใหญ่ */}
+      {selectedSlip && selectedSlip !== 'cash_payment' && selectedSlip !== 'thaichueithai_payment' && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
           <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip preview" />
         </div>
       )}
 
-      {/* Modal แอดมินล็อกอิน */}
+      {/* 🌟 Failsafe Modal สำหรับสั่งซื้อเมื่ออยู่นอก LINE (ของลูกค้า) */}
+      {successModalData && (
+        <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 animate-in zoom-in">
+             <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto text-3xl">✓</div>
+             <h3 className="text-xl font-bold text-primary">สั่งซื้อเรียบร้อยแล้วค่ะ! 🎉</h3>
+             <p className="text-xs text-gray-500 leading-relaxed">ระบบได้บันทึกออเดอร์ของท่านแล้ว กรุณาส่งข้อความยืนยันนี้ให้แอดมินร้านค่ะ</p>
+             
+             <div className="bg-gray-50 p-4 rounded-2xl border border-dashed text-left max-h-40 overflow-y-auto">
+                <pre className="text-[10px] text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{successModalData.text}</pre>
+             </div>
+
+             <div className="space-y-3">
+                <a 
+                  href={`https://line.me/R/share?text=${encodeURIComponent(successModalData.text)}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-4 rounded-full text-sm font-bold shadow-md active:scale-95"
+                >
+                   <Share2 size={18}/> แชร์บิลผ่านแอป LINE
+                </a>
+                <button 
+                  onClick={() => {
+                     navigator.clipboard.writeText(successModalData.text);
+                     showAlert("คัดลอกข้อความสำเร็จ! นำไปวางในแชทร้านค้าได้เลยครับ");
+                  }}
+                  className="w-full bg-gray-100 text-primary py-3 rounded-full text-xs font-bold active:scale-95"
+                >
+                   คัดลอกข้อความ
+                </button>
+                <button 
+                  onClick={() => {
+                     setSuccessModalData(null);
+                     setView('shop');
+                  }}
+                  className="w-full text-gray-400 py-2 text-xs font-bold mt-2"
+                >
+                   ปิดหน้าต่าง
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 Failsafe Modal สำหรับยืนยันจัดส่งเมื่อแชร์ผ่าน LIFF ไม่ได้ (ของแอดมิน) */}
+      {adminDeliverySuccessData && (
+        <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 animate-in zoom-in">
+             <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto text-3xl"><CheckCircle size={32}/></div>
+             <h3 className="text-xl font-bold text-primary">อัปเดตสถานะสำเร็จ! 🛵</h3>
+             <p className="text-xs text-gray-500 leading-relaxed">ระบบบันทึกการส่งแล้ว คุณสามารถแชร์ข้อความนี้ให้ลูกค้าผ่านแอป LINE ได้</p>
+             
+             <div className="bg-gray-50 p-4 rounded-2xl border border-dashed text-left max-h-40 overflow-y-auto">
+                <pre className="text-[10px] text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{adminDeliverySuccessData.text}</pre>
+             </div>
+
+             <div className="space-y-3">
+                <a 
+                  href={`https://line.me/R/share?text=${encodeURIComponent(adminDeliverySuccessData.text)}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-4 rounded-full text-sm font-bold shadow-md active:scale-95"
+                >
+                   <Share2 size={18}/> แชร์สถานะผ่านแอป LINE
+                </a>
+                <button 
+                  onClick={() => {
+                     navigator.clipboard.writeText(adminDeliverySuccessData.text);
+                     showAlert("คัดลอกข้อความสำเร็จ! นำไปวางในแชทลูกค้าได้เลยครับ");
+                  }}
+                  className="w-full bg-gray-100 text-primary py-3 rounded-full text-xs font-bold active:scale-95"
+                >
+                   คัดลอกข้อความ
+                </button>
+                <button 
+                  onClick={() => setAdminDeliverySuccessData(null)}
+                  className="w-full text-gray-400 py-2 text-xs font-bold mt-2"
+                >
+                   ปิดหน้าต่าง
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 Modal แผนสำรองสำหรับให้แอดมินกดค้างเพื่อบันทึกรูปภาพ (กรณีดาวน์โหลดตรงไม่ได้) */}
+      {downloadPreview && (
+        <div className="fixed inset-0 bg-black/95 z-[250] flex flex-col items-center justify-center p-4 animate-in fade-in">
+          <p className="text-white font-bold mb-6 bg-green-500/80 backdrop-blur-sm px-5 py-3 rounded-2xl flex items-center gap-2 shadow-xl border border-green-400 text-sm text-center">
+            <Download size={18}/> กรุณากดค้างที่รูปภาพด้านล่าง<br/>แล้วเลือก "บันทึกรูปภาพ" (Save Image)
+          </p>
+          <img src={downloadPreview} className="max-w-full max-h-[60vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in pointer-events-auto" alt="preview to save" />
+          <button onClick={() => setDownloadPreview(null)} className="mt-8 bg-white text-primary px-8 py-4 rounded-2xl font-bold active:scale-95 shadow-md flex items-center gap-2">
+            <X size={18}/> ปิดหน้าต่าง
+          </button>
+        </div>
+      )}
+
+      {/* Modal แอดมินล็อกอินควบคุมระบบหลังบ้าน */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
           <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
@@ -1714,15 +1938,64 @@ export default function App() {
                  if(adminPassword === '570402') { 
                     localStorage.setItem('happycow_isAdmin', 'true');
                     setView('admin'); 
+                    setAdminTab('orders'); // บังคับให้เริ่มที่แท็บออเดอร์ทันทีหลังปลดล็อกสำเร็จ
                     setShowAdminModal(false); 
                     setAdminPassword(''); 
                  }
-                 else { alert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
+                 else { showAlert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
                }} className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl shadow-lg transition-all active:scale-95 hover:opacity-90">ยืนยัน</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* 🌟 Custom Message Box แทนที่ Alert ดั้งเดิม */}
+      {msgBox.isOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[400] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-[2rem] w-full max-w-sm text-center shadow-2xl animate-in zoom-in-95">
+            {msgBox.type === 'confirm' ? (
+                <AlertCircle size={48} className="text-orange-500 mx-auto mb-5" />
+            ) : (
+                <CheckCircle size={48} className="text-green-500 mx-auto mb-5" />
+            )}
+            
+            <h3 className="font-bold text-sm text-gray-800 mb-8 whitespace-pre-line leading-relaxed">{msgBox.message}</h3>
+            
+            {msgBox.type === 'confirm' ? (
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setMsgBox({ ...msgBox, isOpen: false })} 
+                  className="flex-1 py-4 bg-gray-100 rounded-2xl text-xs font-bold text-gray-600 hover:bg-gray-200 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  onClick={() => {
+                    if (msgBox.onConfirm) msgBox.onConfirm();
+                    setMsgBox({ ...msgBox, isOpen: false });
+                  }} 
+                  className="flex-1 py-4 bg-primary text-white rounded-2xl text-xs font-bold hover:bg-opacity-90 transition-opacity shadow-md"
+                >
+                  ยืนยันตกลง
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => {
+                  setMsgBox({ ...msgBox, isOpen: false });
+                  if (msgBox.message.includes("สำเร็จ") && window.liff && window.liff.isInClient() && msgBox.message.includes("คุณ")) {
+                      window.liff.closeWindow();
+                  }
+                }} 
+                className="w-full py-4 bg-primary text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-opacity shadow-md"
+              >
+                รับทราบ
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

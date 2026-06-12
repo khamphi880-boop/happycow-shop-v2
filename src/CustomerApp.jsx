@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, increment } from 'firebase/firestore';
-
 // --- 1. Firebase Configuration ---
 const firebaseConfig = {
   apiKey: "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",

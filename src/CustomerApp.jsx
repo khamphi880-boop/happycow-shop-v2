@@ -5,7 +5,9 @@ import {
   Star, Share2, Sparkles, Search, TrendingUp 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, increment } from 'firebase/firestore';
+// 🔧 [แก้ไขแล้ว]: เพิ่ม deleteDoc เข้ามาในบรรทัดนี้ เพื่อให้โค้ดบรรทัดที่ 158 ทำงานได้
+import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, increment, deleteDoc } from 'firebase/firestore';
+
 // --- 1. Firebase Configuration ---  hh
 const firebaseConfig = {
   apiKey: "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",
@@ -379,7 +381,6 @@ export default function CustomerApp() {
         {/* --- Shop View --- */}
         {view === 'shop' && (
           <div className="animate-in fade-in">
-            {/* โค้ดหน้าร้านค้าเหมือนเดิมทั้งหมด... */}
             <div className="px-5 pt-4 pb-2 sticky top-[73px] z-[45]" style={{ backgroundColor: currentThemeData.bg }}>
               <div className="relative z-[50]">
                 <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />

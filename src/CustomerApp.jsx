@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, 
   MapPin, Copy, CheckCircle, AlertCircle, Clock, Check, 
-  Banknote, CreditCard, MessageSquare, Star, Share2, Sparkles, Search
+  Banknote, CreditCard, MessageSquare, Star, Share2, Sparkles, Search, TrendingUp, Camera
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, increment } from 'firebase/firestore';

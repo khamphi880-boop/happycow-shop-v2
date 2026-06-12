@@ -1,10 +1,11 @@
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, 
-  MapPin, Copy, CheckCircle, AlertCircle, Clock, Check, 
-  Banknote, CreditCard, MessageSquare, Star, Share2, Sparkles, Search, TrendingUp, Camera
+  Copy, CheckCircle, AlertCircle, Clock, Banknote, CreditCard, MessageSquare, 
+  Star, Share2, Sparkles, Search, TrendingUp 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, increment } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, increment } from 'firebase/firestore';
 
 // --- 1. Firebase Configuration ---
 const firebaseConfig = {

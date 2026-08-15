@@ -1,15 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line
+} from 'recharts';
 import { 
   ShoppingCart, Plus, Trash2, ChevronLeft, X, Upload, ClipboardList, Coffee, Zap, 
   MapPin, Settings, Copy, CheckCircle, AlertCircle, LogIn, Eye, Clock, Check, 
   Banknote, CreditCard, MessageSquare, Star, Edit, Save, Camera, Home, Building, 
   TrendingUp, Download, ArrowUp, ArrowDown, Search, Palette, BellRing, Share2, UserCheck,
-  Sparkles, Database, Users
+  Sparkles, Database, Users, Filter, Calendar, UserX, DollarSign, Package, CheckCircle2, ChevronRight, ShieldCheck
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { 
+  getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, deleteDoc, 
+  updateDoc, increment, query, orderBy, limit, getDocs 
+} from 'firebase/firestore';
 
-// --- 1. Firebase Configuration (ตั้งค่าการเชื่อมต่อฐานข้อมูล) ---
+// --- 1. Firebase Configuration & Constants ---
 const firebaseConfig = {
   apiKey: "AIzaSyALI9gWvkoSfaGZd5tVxA-INr4QV5Cmf-w",
   authDomain: "happycowshop-fd7b0.firebaseapp.com",
@@ -26,8 +33,8 @@ const LIFF_ID = "2009828681-C1cb8QC3";
 const CATEGORIES = ['🔥 เมนูขายดี', 'นม', 'ชา', 'กาแฟ', 'มัทฉะ', 'สมูทตี้โยเกิร์ต', 'วิปครีมและครีมชีส'];
 const SWEETNESS = ['0%', '25%', '50%', '75%', '100%', '120%'];
 const THAI_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
-// [MODIFIED] SAUCES - รายการซอสเริ่มต้นสำหรับปุ่มนำเข้าเข้าสู่ฐานข้อมูล Firestore
 const DEFAULT_SAUCES = [
   { name: 'ซอสช็อกโกแลต', price: 0 },
   { name: 'ซอสคาราเมล', price: 0 },
@@ -38,17 +45,61 @@ const DEFAULT_SAUCES = [
 ];
 
 const THEMES = {
-  default: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: 'ปกติ (มินิมอล)', icons: [] },
+  default: { bg: '#F9F6F0', primary: '#2D2118', accent: '#B8860B', name: 'ปกติ (มินิมอลพรีเมียม)', icons: [] },
   christmas: { bg: '#f0fdf4', primary: '#166534', accent: '#dc2626', name: '🎄 คริสต์มาส', icons: ['❄️', '⛄', '🎁', '🦌'] },
   valentine: { bg: '#fdf2f8', primary: '#831843', accent: '#db2777', name: '💖 วาเลนไทน์', icons: ['💖', '💕', '🌹', '🥰'] },
-  songkran: { bg: '#e0f2fe', primary: '#0369a1', accent: '#0ea5e9', name: '💦 สงกรานต์', icons: ['💦', '🔫', '🌊', '🌴'] },
+  songkran: { bg: '#e0f2fe', primary: '#0369a1', accent: '#0ea5e9', name: '💦 สงกรานต์', icons: ['💦', '🌸', '🌊', '🌴'] },
   halloween: { bg: '#fffbeb', primary: '#451a03', accent: '#ea580c', name: '🎃 ฮาโลวีน', icons: ['🎃', '👻', '🦇', '🕸️'] },
   newyear: { bg: '#f8fafc', primary: '#0f172a', accent: '#ca8a04', name: '🎆 ปีใหม่', icons: ['🎆', '✨', '🎉', '🥂'] },
   loykrathong: { bg: '#f5f3ff', primary: '#2e1065', accent: '#7c3aed', name: '🌕 ลอยกระทง', icons: ['🌕', '🕯️', '🌸', '✨'] },
-  custom: { bg: '#F5EEDC', primary: '#3D2C1E', accent: '#A67C52', name: '🎨 อัปโหลดเอง', icons: [] },
+  custom: { bg: '#F9F6F0', primary: '#2D2118', accent: '#B8860B', name: '🎨 อัปโหลดเอง', icons: [] },
 };
 
-// --- 2. ฟังก์ชันบีบอัดรูปภาพ (Image Compression) ---
+// --- 2. Helper Functions ---
+const parseCustomDate = (dateVal, dateStrVal, fallbackVal) => {
+  const val = dateVal || dateStrVal || fallbackVal;
+  if (!val) return null;
+
+  if (typeof val === 'number' && val > 1000000000) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear(), dateObj: d };
+    }
+  }
+
+  const str = String(val).trim();
+  if (!str) return null;
+
+  const parsedStandard = new Date(str);
+  if (!isNaN(parsedStandard.getTime()) && parsedStandard.getFullYear() > 1900) {
+    let y = parsedStandard.getFullYear();
+    if (y > 2400) y -= 543; 
+    return { day: parsedStandard.getDate(), month: parsedStandard.getMonth() + 1, year: y, dateObj: parsedStandard };
+  }
+
+  const match = str.match(/(\d{1,4})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{1,4})/);
+  if (match) {
+    let p1 = parseInt(match[1], 10);
+    let p2 = parseInt(match[2], 10);
+    let p3 = parseInt(match[3], 10);
+
+    let day, month, year;
+    if (p1 > 1000) {
+      year = p1; month = p2; day = p3;
+    } else {
+      day = p1; month = p2; year = p3;
+    }
+
+    if (year > 2400) year -= 543; 
+
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 1900) {
+      return { day, month, year, dateObj: new Date(year, month - 1, day) };
+    }
+  }
+
+  return null;
+};
+
 const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -73,6 +124,7 @@ const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => 
   });
 };
 
+// --- 3. Main App Component ---
 export default function App() {
   const [menuItems, setMenuItems] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -128,7 +180,7 @@ export default function App() {
   const [selectedSlip, setSelectedSlip] = useState(null); 
   const [downloadPreview, setDownloadPreview] = useState(null); 
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
-  
+
   const [selectedOrderId, setSelectedOrderId] = useState('');
 
   const [deliveryModal, setDeliveryModal] = useState(null);
@@ -136,12 +188,13 @@ export default function App() {
   const [deliveryLocation, setDeliveryLocation] = useState('room');
   const [isDelivering, setIsDelivering] = useState(false);
 
-  // [MODIFIED] เพิ่ม googleSheetUrl ใน storeSettings
+  // [MODIFIED] Added minOrderAmount to storeSettings default state
   const [storeSettings, setStoreSettings] = useState({ 
     promptPayNo: '0812345678', qrCodeImage: '', isStoreOpen: true, theme: 'default', 
     customBgImage: '', isBlendOut: false, notifyAdmin: false, adminLineId: '',
     shopLineUrl: '', autoCloseEnabled: false, maxQueue: 3, autoCloseDays: [],
-    googleSheetUrl: '' 
+    minOrderAmount: 0,
+    googleSheetUrl: 'https://script.google.com/macros/s/AKfycbz8AiaKwcO7IhRqwCEsZhpPmTw9mIkWsnKB-2MDti0-hpDFQ6FGM4ExfijSDfdXm8mn/exec'
   });
   const [editPromptPay, setEditPromptPay] = useState('');
   const [editQrCodeImage, setEditQrCodeImage] = useState('');
@@ -152,9 +205,18 @@ export default function App() {
   const [editAutoCloseEnabled, setEditAutoCloseEnabled] = useState(false);
   const [editMaxQueue, setEditMaxQueue] = useState(3);
   const [editAutoCloseDays, setEditAutoCloseDays] = useState([]);
-  const [editGoogleSheetUrl, setEditGoogleSheetUrl] = useState(''); // [MODIFIED]
+  const [editGoogleSheetUrl, setEditGoogleSheetUrl] = useState(''); 
+  // [ADDED] State for editing min order amount in admin settings
+  const [editMinOrderAmount, setEditMinOrderAmount] = useState(0);
   
-  const [isSyncingAll, setIsSyncingAll] = useState(false); // [MODIFIED] State กำลังซิงค์ทั้งหมดไป Google Sheets
+  const [isSyncingAll, setIsSyncingAll] = useState(false); 
+
+  const [sheetOrdersData, setSheetOrdersData] = useState([]);
+  const [isLoadingSheetDashboard, setIsLoadingSheetDashboard] = useState(false);
+
+  const [sheetFilterDay, setSheetFilterDay] = useState('all');
+  const [sheetFilterMonth, setSheetFilterMonth] = useState('all');
+  const [sheetFilterYear, setSheetFilterYear] = useState('all');
 
   const [newMenu, setNewMenu] = useState({ 
     name: '', price: '', category: 'นม', image: '', blendPrice: 5, 
@@ -174,7 +236,10 @@ export default function App() {
   const [adminDeliverySuccessData, setAdminDeliverySuccessData] = useState(null);
 
   const [optionModalItem, setOptionModalItem] = useState(null);
-  const [tempOptions, setTempOptions] = useState({ sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [], selectedSauces: [], separateIce: false });
+  const [tempOptions, setTempOptions] = useState({ 
+    sweetness: '100%', isBlended: false, addPearl: true, selectedToppings: [], 
+    selectedSauces: [], bean: 'คั่วเข้ม', teaType: 'มัทฉะ', addShot: false, separateIce: false 
+  });
   const [lineProfile, setLineProfile] = useState({ displayName: 'ลูกค้าทั่วไป', pictureUrl: '', userId: '' });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -184,10 +249,8 @@ export default function App() {
     catch(e) { return []; }
   });
   const [popularSearches, setPopularSearches] = useState([]);
-  const [visitStats, setVisitStats] = useState({});
   const [loadingSlipId, setLoadingSlipId] = useState(null);
 
-  const [activeUsers, setActiveUsers] = useState([]);
   const [showStoreClosedModal, setShowStoreClosedModal] = useState(false);
 
   const dragItem = useRef(null);
@@ -196,7 +259,6 @@ export default function App() {
   const previousOrderCount = useRef(0);
   const isProcessingOrder = useRef(false);
 
-  // Helper Function ตรวจสอบว่าเมนูนี้เป็นวิปครีมหรือครีมชีสหรือไม่
   const isWhipOrCreamCheeseItem = (item) => {
     if (!item) return false;
     return item.category === 'วิปครีมและครีมชีส' || 
@@ -209,7 +271,49 @@ export default function App() {
     return (item.blendPrice !== undefined && item.blendPrice !== null && item.blendPrice !== '') ? Number(item.blendPrice) : 5;
   };
 
-  // [MODIFIED] ฟังก์ชันส่งข้อมูลออร์เดอร์ไปยัง Google Sheets (Background Fetch)
+  const generateOrderSummaryText = (order) => {
+    if (!order) return '';
+    const dateStr = new Date(order.timestamp).toLocaleString('th-TH');
+    const paymentText = order.paymentMethod === 'cash' ? 'ชำระเงินสด' : (order.paymentMethod === 'thaichueithai' ? 'ไทยช่วยไทยพลัส' : 'โอนพร้อมเพย์');
+    const orderLink = `https://liff.line.me/${LIFF_ID}?action=viewOrders&orderId=${order.id}`;
+
+    const itemsListText = (order.items || []).map(i => {
+      const blendText = getBlendText(i);
+      const beanText = i.bean ? ` • เมล็ด: ${i.bean}` : '';
+      const teaText = i.teaType ? ` • รสชา: ${i.teaType}` : '';
+      const shotText = i.addShot ? ` • เพิ่มช็อตกาแฟ` : '';
+      const iceText = i.separateIce ? ` • แยกน้ำแข็ง (+฿5)` : '';
+      const saucesText = i.selectedSauces?.length > 0 ? ` • ราดซอส: ${i.selectedSauces.map(s => typeof s === 'object' ? s.name : s).join(', ')}` : '';
+      const toppingsText = i.selectedToppings?.length > 0 ? ` • เพิ่มท็อปปิ้ง: ${i.selectedToppings.map(t => t.name).join(', ')}` : '';
+      const pearlText = i.hasFreePearl ? (i.addPearl ? ' • รับไข่มุกฟรี' : ' • ไม่รับไข่มุกฟรี') : '';
+      const sweetText = isWhipOrCreamCheeseItem(i) ? '' : ` • หวาน ${i.sweetness}`;
+      return `- ${i.qty}x ${i.name} (${blendText}${sweetText}${beanText}${teaText}${shotText}${iceText}${pearlText}${saucesText}${toppingsText})`;
+    }).join('\n');
+
+    return `วัวนมอารมณ์ดี 🐮\nบิลเลขที่: #${order.id.slice(0, 6)}\nวัน/เวลา: ${dateStr}\nลูกค้า: คุณ ${order.lineName || "ลูกค้าทั่วไป"}\n${itemsListText}\n\nยอดรวม: ฿${order.total}\nที่อยู่: ${order.address || '-'}\nช่องทางชำระเงิน: ${paymentText}\nหมายเหตุ: ${order.note || '-'}\n\n📄 สั่งน้ำกดลิ้งค์ได้เลย: ${orderLink}`;
+  };
+
+  const handleShareOrderBill = async (order) => {
+    const text = generateOrderSummaryText(order);
+    if (!text) return;
+
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) { console.error("Clipboard copy error:", e); }
+    }
+
+    if (window.liff && window.liff.isLoggedIn() && window.liff.isApiAvailable('shareTargetPicker')) {
+      try {
+        await window.liff.shareTargetPicker([{ type: "text", text }]);
+      } catch (err) {
+        window.open(`https://line.me/R/share?text=${encodeURIComponent(text)}`, '_blank');
+      }
+    } else {
+      window.open(`https://line.me/R/share?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
   const sendOrderToGoogleSheets = async (orderData) => {
     const endpoint = storeSettings.googleSheetUrl;
     if (!endpoint || !endpoint.startsWith('http')) return;
@@ -226,7 +330,28 @@ export default function App() {
     }
   };
 
-  // [MODIFIED] ฟังก์ชันซิงค์ออร์เดอร์ทั้งหมดลง Google Sheets ในคลิกเดียว
+  const fetchDashboardDataFromGoogleSheets = useCallback(async () => {
+    if (!storeSettings?.googleSheetUrl) return;
+
+    setIsLoadingSheetDashboard(true);
+    try {
+      const res = await fetch(storeSettings.googleSheetUrl);
+      const json = await res.json();
+
+      if (json && json.status === 'success') {
+        setSheetOrdersData(Array.isArray(json.data) ? json.data : []);
+      } else {
+        console.warn("Google Sheets API returned non-success status:", json);
+        setSheetOrdersData([]);
+      }
+    } catch (err) {
+      console.error("Error fetching Google Sheets dashboard:", err);
+      setSheetOrdersData([]);
+    } finally {
+      setIsLoadingSheetDashboard(false);
+    }
+  }, [storeSettings?.googleSheetUrl]);
+
   const syncAllToGoogleSheets = async () => {
     if (!storeSettings.googleSheetUrl) {
       return showAlert("กรุณาตั้งค่า Google Sheet Web App URL ในเมนูตั้งค่าก่อนครับ");
@@ -248,6 +373,12 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (storeSettings?.googleSheetUrl) {
+      fetchDashboardDataFromGoogleSheets();
+    }
+  }, [storeSettings?.googleSheetUrl, fetchDashboardDataFromGoogleSheets]);
+
   useEffect(() => { localStorage.setItem('happycow_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('happycow_view', view); }, [view]);
   useEffect(() => { localStorage.setItem('happycow_address', address); }, [address]);
@@ -255,25 +386,13 @@ export default function App() {
   useEffect(() => { localStorage.setItem('happycow_paymentMethod', paymentMethod); }, [paymentMethod]);
   useEffect(() => { localStorage.setItem('happycow_searchHistory', JSON.stringify(searchHistory)); }, [searchHistory]);
 
-  // --- 🌟 useEffect หลัก (Core Data) ---
   useEffect(() => {
-    const recordVisit = async () => {
-      const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
-      if (isAdmin) return;
+    if (view === 'admin' && adminTab === 'dashboard' && storeSettings?.googleSheetUrl) {
+      fetchDashboardDataFromGoogleSheets();
+    }
+  }, [view, adminTab, storeSettings?.googleSheetUrl, fetchDashboardDataFromGoogleSheets]);
 
-      const todayStr = new Date().toLocaleDateString('en-CA'); 
-      const isVisited = sessionStorage.getItem('happycow_visited_today');
-      if (!isVisited) {
-        sessionStorage.setItem('happycow_visited_today', 'true');
-        try {
-          await setDoc(doc(db, 'settings', 'visit_stats'), {
-            [todayStr]: increment(1)
-          }, { merge: true });
-        } catch (e) { console.error("Visit Stats Log Error:", e); }
-      }
-    };
-    recordVisit();
-
+  useEffect(() => {
     let cid = localStorage.getItem('happycow_uid') || 'guest_' + Math.random().toString(36).substr(2, 5);
     localStorage.setItem('happycow_uid', cid);
     setLineProfile(prev => ({ ...prev, userId: cid }));
@@ -281,7 +400,9 @@ export default function App() {
     const initializeLiff = () => {
       window.liff.init({ liffId: LIFF_ID }).then(() => {
         if (window.liff.isLoggedIn()) {
-          window.liff.getProfile().then(p => setLineProfile({ displayName: p.displayName, pictureUrl: p.pictureUrl, userId: p.userId }));
+          window.liff.getProfile().then(p => {
+            setLineProfile({ displayName: p.displayName, pictureUrl: p.pictureUrl, userId: p.userId });
+          });
         }
       }).catch(err => console.error("LIFF Error", err));
     };
@@ -308,7 +429,7 @@ export default function App() {
       setSauces(fetchedSauces); 
     });
 
-    // [MODIFIED] อ่านค่า googleSheetUrl จาก Firestore
+    // [MODIFIED] Pull minOrderAmount from Firestore settings
     const unsubSettings = onSnapshot(doc(db, 'settings', 'store'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -324,7 +445,8 @@ export default function App() {
            autoCloseEnabled: data.autoCloseEnabled || false,
            maxQueue: data.maxQueue || 3,
            autoCloseDays: data.autoCloseDays || [],
-           googleSheetUrl: data.googleSheetUrl || '' // [MODIFIED]
+           minOrderAmount: data.minOrderAmount !== undefined ? Number(data.minOrderAmount) : 0,
+           googleSheetUrl: data.googleSheetUrl || '' 
         });
         setEditPromptPay(data.promptPayNo || '0812345678'); 
         setEditQrCodeImage(data.qrCodeImage || '');
@@ -335,14 +457,14 @@ export default function App() {
         setEditAutoCloseEnabled(data.autoCloseEnabled || false);
         setEditMaxQueue(data.maxQueue || 3);
         setEditAutoCloseDays(data.autoCloseDays || []);
-        setEditGoogleSheetUrl(data.googleSheetUrl || ''); // [MODIFIED]
+        setEditMinOrderAmount(data.minOrderAmount !== undefined ? Number(data.minOrderAmount) : 0);
+        setEditGoogleSheetUrl(data.googleSheetUrl || ''); 
       }
     });
 
     return () => { unsubMenus(); unsubToppings(); unsubSauces(); unsubSettings(); };
   }, []);
 
-  // --- 🌟 useEffect (Lazy Load Orders) ---
   useEffect(() => {
     const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
     if (view !== 'admin' && view !== 'myOrders' && !isAdmin) return;
@@ -356,69 +478,6 @@ export default function App() {
     return () => unsubOrders();
   }, [view]);
 
-  // --- 🌟 useEffect (Lazy Load Admin Stats) ---
-  useEffect(() => {
-    const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
-    if (view !== 'admin' && !isAdmin) return;
-
-    const unsubActive = onSnapshot(collection(db, 'active_users'), snapshot => {
-      const now = Date.now();
-      const threshold = 120000;
-      const activeList = snapshot.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(user => now - user.lastActive < threshold);
-      setActiveUsers(activeList);
-    });
-
-    const pruneInterval = setInterval(() => {
-      setActiveUsers(prev => {
-        const now = Date.now();
-        return prev.filter(user => now - user.lastActive < 120000);
-      });
-    }, 30000);
-
-    const unsubSearchStats = onSnapshot(doc(db, 'settings', 'search_stats'), docSnap => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 8).map(entry => entry[0]);
-        setPopularSearches(sorted);
-      } else setPopularSearches([]);
-    });
-
-    const unsubVisits = onSnapshot(doc(db, 'settings', 'visit_stats'), docSnap => {
-      if (docSnap.exists()) {
-        setVisitStats(docSnap.data());
-      }
-    });
-
-    return () => { unsubActive(); clearInterval(pruneInterval); unsubSearchStats(); unsubVisits(); };
-  }, [view]);
-
-  // ระบบ Presence (บอกสถานะออนไลน์ของลูกค้า)
-  useEffect(() => {
-    if (!lineProfile.userId) return;
-    const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
-    if (isAdmin) return;
-
-    const docRef = doc(db, 'active_users', lineProfile.userId);
-    const sendPing = async () => {
-      try { await setDoc(docRef, { displayName: lineProfile.displayName || 'ลูกค้าทั่วไป', lastActive: Date.now() }, { merge: true }); } catch (e) { }
-    };
-
-    sendPing();
-    const pingInterval = setInterval(sendPing, 60000);
-
-    const handleBeforeUnload = () => { deleteDoc(docRef).catch(() => {}); };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      clearInterval(pingInterval);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      handleBeforeUnload(); 
-    };
-  }, [lineProfile.userId, lineProfile.displayName]);
-
-  // ตรวจจับสถานะของร้านค้าแบบเรียลไทม์
   useEffect(() => {
     const isAdmin = localStorage.getItem('happycow_isAdmin') === 'true';
     if (storeSettings.isStoreOpen === false && !isAdmin) {
@@ -428,7 +487,6 @@ export default function App() {
     }
   }, [storeSettings.isStoreOpen]);
 
-  // ระบบ Auto-Close
   useEffect(() => {
     if (storeSettings.autoCloseEnabled && storeSettings.isStoreOpen && orders.length > 0) {
       const todayDayIndex = new Date().getDay(); 
@@ -488,8 +546,6 @@ export default function App() {
     }
     previousOrderCount.current = orders.length;
   }, [orders, view]);
-
-  const handleLineLogin = () => { if (window.liff && !window.liff.isLoggedIn()) window.liff.login(); };
 
   const handleAddNewMenu = async () => {
     if (!newMenu.name || !newMenu.price || !newMenu.image) return showAlert('กรุณากรอกข้อมูลให้ครบครับ');
@@ -637,7 +693,6 @@ export default function App() {
     try { await setDoc(doc(db, 'settings', 'search_stats'), { [cleanTerm]: increment(1) }, { merge: true }); } catch (e) { console.error("Error saving search stats", e); }
   };
 
-  // [MODIFIED] อัปเดตการยอมรับออร์เดอร์พร้อมซิงค์ Google Sheets
   const handleAcceptOrder = async (order) => {
     try {
       await updateDoc(doc(db, 'orders', order.id), { status: 'cooking' });
@@ -652,7 +707,6 @@ export default function App() {
     } catch (e) { showAlert("เกิดข้อผิดพลาด: " + e.message); }
   };
 
-  // [MODIFIED] อัปเดตการจัดส่งเรียบร้อยพร้อมซิงค์ Google Sheets
   const handleConfirmDelivery = async () => {
     if (deliveryLocation !== 'pickup' && !deliveryImage) return showAlert('กรุณาแนบรูปภาพการจัดส่งครับ 📸');
     setIsDelivering(true);
@@ -687,76 +741,6 @@ export default function App() {
       
     } catch (e) { showAlert("เกิดข้อผิดพลาด: " + e.message); }
     setIsDelivering(false);
-  };
-
-  const getRecentVisits = () => {
-    const list = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toLocaleDateString('en-CA'); 
-      const thaiDateStr = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-      const count = visitStats[dateStr] || 0;
-      list.push({ dateStr, thaiDateStr, count });
-    }
-    return list;
-  };
-
-  const recentVisits = getRecentVisits();
-  const maxVisitCount = Math.max(...recentVisits.map(v => v.count), 1);
-
-  const calculateRevenue = () => {
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
-    let daily = 0, monthly = 0, yearly = 0;
-    
-    const last7DaysMap = {};
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(); d.setDate(d.getDate() - i);
-        last7DaysMap[d.toLocaleDateString('th-TH')] = 0;
-    }
-
-    orders.filter(o => o.status === 'completed' && !o.isDeleted).forEach(o => {
-      if (o.timestamp >= startOfDay) daily += o.total;
-      if (o.timestamp >= startOfMonth) monthly += o.total;
-      if (o.timestamp >= startOfYear) yearly += o.total;
-      const oDate = new Date(o.timestamp).toLocaleDateString('th-TH');
-      if(last7DaysMap[oDate] !== undefined) last7DaysMap[oDate] += o.total;
-    });
-    
-    const dailyHistory = Object.keys(last7DaysMap).map(date => ({ date, total: last7DaysMap[date] }));
-    return { daily, monthly, yearly, dailyHistory };
-  };
-
-  const getStorageEstimation = () => {
-     const orderImagesCount = orders.filter(o => o.hasSlip || o.hasDeliveryImage).length;
-     const menuImagesCount = menuItems.filter(m => m.image && m.image.length > 100).length;
-     
-     const estStorageUsageKB = (orderImagesCount * 100) + (menuImagesCount * 80);
-     const maxStorageKB = 5 * 1024 * 1024; 
-     const storagePercent = Math.min((estStorageUsageKB / maxStorageKB) * 100, 100);
-     const usageMB = (estStorageUsageKB / 1024).toFixed(2);
-     
-     return { usageMB, storagePercent };
-  };
-
-  const exportToCSV = () => {
-    const completedOrders = orders.filter(o => o.status === 'completed' && !o.isDeleted);
-    if (completedOrders.length === 0) return showAlert('ยังไม่มีข้อมูลคำสั่งซื้อที่เสร็จสมบูรณ์ครับ');
-    let csv = "\uFEFFวันที่และเวลา,ชื่อลูกค้า,ยอดรวม(บาท),ช่องทางชำระเงิน,จุดจัดส่ง,ที่อยู่\n"; 
-    completedOrders.forEach(o => {
-      const date = new Date(o.timestamp).toLocaleString('th-TH');
-      const payment = o.paymentMethod === 'cash' ? 'เงินสด' : (o.paymentMethod === 'thaichueithai' ? 'ไทยช่วยไทยพลัส' : 'โอนเงิน');
-      const location = o.deliveryLocation === 'room' ? 'หน้าห้อง' : (o.deliveryLocation === 'building' ? 'หน้าตึก' : (o.deliveryLocation === 'pickup' ? 'รับเองที่ร้าน' : '-'));
-      csv += `"${date}","${(o.lineName||'').replace(/"/g, '""')}",${o.total},${payment},${location},"${(o.address||'').replace(/"/g, '""')}"\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", `สรุปรายรับ_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
   const exportMenuToCSV = () => {
@@ -819,14 +803,78 @@ export default function App() {
 
   const bestSellers = React.useMemo(() => {
     const defaultSlice = menuItems.slice(0, 4);
-    if (orders.length === 0 || menuItems.length === 0) return defaultSlice;
+    if (menuItems.length === 0) return defaultSlice;
+
+    if (!sheetOrdersData || !Array.isArray(sheetOrdersData) || sheetOrdersData.length === 0) {
+      return defaultSlice;
+    }
+
     const salesCount = {};
-    orders.forEach(order => { (order.items || []).forEach(item => { salesCount[item.name] = (salesCount[item.name] || 0) + item.qty; }); });
-    let sortedMenus = menuItems.map(menu => ({ ...menu, sales: salesCount[menu.name] || 0 }));
+
+    const countItemSales = (itemsList) => {
+      if (!itemsList) return;
+
+      if (Array.isArray(itemsList)) {
+        itemsList.forEach(item => {
+          if (item && item.name) {
+            const qty = Number(item.qty) || 1;
+            salesCount[item.name] = (salesCount[item.name] || 0) + qty;
+          }
+        });
+        return;
+      }
+
+      if (typeof itemsList === 'string') {
+        let parsedJson = null;
+        try {
+          if (itemsList.trim().startsWith('[') || itemsList.trim().startsWith('{')) {
+            parsedJson = JSON.parse(itemsList);
+          }
+        } catch (e) {}
+
+        if (Array.isArray(parsedJson)) {
+          parsedJson.forEach(item => {
+            if (item && item.name) {
+              const qty = Number(item.qty) || 1;
+              salesCount[item.name] = (salesCount[item.name] || 0) + qty;
+            }
+          });
+          return;
+        }
+
+        const lines = itemsList.split('\n');
+        lines.forEach(line => {
+          if (!line.trim()) return;
+          const match = line.match(/(?:-\s*)?(\d+)x\s*(.+)/i);
+          const qty = match ? parseInt(match[1], 10) : 1;
+          const itemDetail = match ? match[2] : line;
+
+          menuItems.forEach(menu => {
+            if (itemDetail.includes(menu.name)) {
+              salesCount[menu.name] = (salesCount[menu.name] || 0) + qty;
+            }
+          });
+        });
+      }
+    };
+
+    sheetOrdersData.forEach(sheetOrder => {
+      if (!sheetOrder) return;
+      const st = String(sheetOrder.status || '').toLowerCase();
+      if (st.includes('cancel') || st.includes('ยกเลิก') || st.includes('deleted')) return;
+      
+      countItemSales(sheetOrder.items);
+    });
+
+    let sortedMenus = menuItems.map(menu => ({
+      ...menu,
+      sales: salesCount[menu.name] || 0
+    }));
+
     sortedMenus = sortedMenus.filter(m => m.sales > 0).sort((a, b) => b.sales - a.sales);
     
     return sortedMenus.length === 0 ? defaultSlice : sortedMenus.slice(0, 9);
-  }, [orders, menuItems]);
+  }, [sheetOrdersData, menuItems]);
 
   const displayedItems = React.useMemo(() => {
     if (searchQuery) return menuItems.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -852,46 +900,93 @@ export default function App() {
     );
   }, [orders, adminSearchQuery]);
 
-  // [MODIFIED] คำนวณข้อมูลสำหรับ Web Dashboard
-  const pendingCount = orders.filter(o => !o.isDeleted && o.status === 'pending').length;
-  const cookingCount = orders.filter(o => !o.isDeleted && o.status === 'cooking').length;
-  const completedCount = orders.filter(o => !o.isDeleted && o.status === 'completed').length;
-
-  const completedOrdersList = React.useMemo(() => orders.filter(o => o.status === 'completed' && !o.isDeleted), [orders]);
-  const promptPayTotal = React.useMemo(() => completedOrdersList.filter(o => o.paymentMethod === 'promptpay').reduce((sum, o) => sum + o.total, 0), [completedOrdersList]);
-  const cashTotal = React.useMemo(() => completedOrdersList.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + o.total, 0), [completedOrdersList]);
-  const thaiChueiThaiTotal = React.useMemo(() => completedOrdersList.filter(o => o.paymentMethod === 'thaichueithai').reduce((sum, o) => sum + o.total, 0), [completedOrdersList]);
-  const grandTotal = calculateRevenue().yearly || 1;
-
-  const peakHoursData = React.useMemo(() => {
-    const hoursMap = { '08:00-11:00': 0, '11:00-14:00': 0, '14:00-17:00': 0, '17:00-20:00': 0, '20:00+': 0 };
-    completedOrdersList.forEach(o => {
-      const h = new Date(o.timestamp).getHours();
-      if (h >= 8 && h < 11) hoursMap['08:00-11:00'] += 1;
-      else if (h >= 11 && h < 14) hoursMap['11:00-14:00'] += 1;
-      else if (h >= 14 && h < 17) hoursMap['14:00-17:00'] += 1;
-      else if (h >= 17 && h < 20) hoursMap['17:00-20:00'] += 1;
-      else hoursMap['20:00+'] += 1;
+  const sheetStats = useMemo(() => {
+    const rawOrders = Array.isArray(sheetOrdersData) ? sheetOrdersData : [];
+    
+    const validSheetOrders = rawOrders.filter(o => {
+      if (!o) return false;
+      const st = String(o.status || '').toLowerCase().trim();
+      return !st.includes('cancel') && !st.includes('ยกเลิก') && !st.includes('deleted');
     });
-    return hoursMap;
-  }, [completedOrdersList]);
-  const maxPeakCount = Math.max(...Object.values(peakHoursData), 1);
 
-  const topProducts = React.useMemo(() => {
-    const map = {};
-    completedOrdersList.forEach(o => {
-      (o.items || []).forEach(item => {
-        if (!map[item.name]) map[item.name] = { qty: 0, revenue: 0 };
-        map[item.name].qty += item.qty;
-        map[item.name].revenue += (item.price * item.qty);
-      });
+    const now = new Date();
+    const currentDay = now.getDate();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    let todayRevenue = 0;
+    let totalRevenue = 0;
+    let promptPaySum = 0;
+    let cashSum = 0;
+    let thaiSum = 0;
+    let completedCount = 0;
+
+    validSheetOrders.forEach(o => {
+      const amount = Number(o?.total) || 0;
+      const paymentMethod = String(o?.paymentMethod || o?.payment || '').toLowerCase();
+      const st = String(o?.status || '').toLowerCase();
+
+      if (st.includes('completed') || st.includes('จัดส่งสำเร็จ') || st.includes('สำเร็จ') || st.includes('paid') || st.includes('เสร็จสิ้น')) {
+        completedCount++;
+      }
+
+      const parsed = parseCustomDate(o?.timestamp, o?.timestampStr, o?.datetime || o?.date);
+      if (parsed && parsed.day === currentDay && parsed.month === currentMonth && parsed.year === currentYear) {
+        todayRevenue += amount;
+      }
+
+      totalRevenue += amount;
+
+      if (paymentMethod.includes("พร้อมเพย์") || paymentMethod.includes("promptpay") || paymentMethod.includes("โอน")) {
+        promptPaySum += amount;
+      } else if (paymentMethod.includes("เงินสด") || paymentMethod.includes("cash")) {
+        cashSum += amount;
+      } else if (paymentMethod.includes("ไทยช่วยไทย") || paymentMethod.includes("thaichueithai") || paymentMethod.includes("ไทย")) {
+        thaiSum += amount;
+      }
     });
-    return Object.entries(map)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
-  }, [completedOrdersList]);
-  const maxTopQty = topProducts[0]?.qty || 1;
+
+    return {
+      todayRevenue,
+      totalOrdersCount: validSheetOrders.length,
+      completedCount,
+      totalRevenue,
+      promptPaySum,
+      cashSum,
+      thaiSum,
+      grandTotal: totalRevenue || 1
+    };
+  }, [sheetOrdersData]);
+
+  const filteredSheetOrders = useMemo(() => {
+    return (Array.isArray(sheetOrdersData) ? sheetOrdersData : []).filter(o => {
+      if (!o) return false;
+      
+      const parsed = parseCustomDate(o.timestamp, o.timestampStr, o.datetime || o.date);
+      if (!parsed) return true;
+
+      const dStr = parsed.day.toString();
+      const mStr = parsed.month.toString();
+      const yStr = parsed.year.toString();
+
+      if (sheetFilterDay !== 'all' && dStr !== sheetFilterDay) return false;
+      if (sheetFilterMonth !== 'all' && mStr !== sheetFilterMonth) return false;
+      if (sheetFilterYear !== 'all' && yStr !== sheetFilterYear) return false;
+
+      return true;
+    });
+  }, [sheetOrdersData, sheetFilterDay, sheetFilterMonth, sheetFilterYear]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set([new Date().getFullYear().toString()]);
+    (Array.isArray(sheetOrdersData) ? sheetOrdersData : []).forEach(o => {
+      const parsed = parseCustomDate(o.timestamp, o.timestampStr, o.datetime || o.date);
+      if (parsed && parsed.year) {
+        years.add(parsed.year.toString());
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [sheetOrdersData]);
 
   const sliderRef = useRef(null);
   useEffect(() => {
@@ -906,10 +1001,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, [view, promotedItems.length, searchQuery]);
 
-  const revData = calculateRevenue();
-  const storageData = getStorageEstimation();
   const currentThemeData = THEMES[storeSettings.theme] || THEMES.default;
   const cartTotal = cart.reduce((s,i)=>s+(i.price*i.qty),0);
+
+  // [ADDED] Check whether the cart amount fulfills the minimum order requirement
+  const isBelowMinOrder = storeSettings.minOrderAmount > 0 && cartTotal < storeSettings.minOrderAmount;
+  const minOrderShortage = storeSettings.minOrderAmount > 0 ? Math.max(0, storeSettings.minOrderAmount - cartTotal) : 0;
 
   const mainContainerStyle = {
     backgroundColor: currentThemeData.bg,
@@ -918,19 +1015,27 @@ export default function App() {
   };
 
   return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col font-sans relative overflow-hidden transition-colors duration-500" style={mainContainerStyle}>
+    <div className="max-w-md mx-auto min-h-screen flex flex-col font-sans relative overflow-hidden transition-colors duration-500 shadow-2xl bg-amber-50/20" style={mainContainerStyle}>
       <audio id="orderNotification" ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2854/2854-preview.mp3" preload="auto"></audio>
       
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Vollkorn:wght@700&family=Kanit:wght@400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Kanit:wght@300;400;500;600;700&display=swap');
+        
         :root {
           --theme-primary: ${currentThemeData.primary};
           --theme-accent: ${currentThemeData.accent};
           --theme-bg: ${currentThemeData.bg};
         }
-        .font-serif { font-family: 'Vollkorn', serif; }
+
+        body {
+          font-family: 'Kanit', 'Plus Jakarta Sans', sans-serif;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .font-serif { font-family: 'Plus Jakarta Sans', 'Kanit', sans-serif; }
         .font-kanit { font-family: 'Kanit', sans-serif; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
         .bg-primary { background-color: var(--theme-primary); color: #fff; }
         .text-primary { color: var(--theme-primary); }
@@ -938,25 +1043,38 @@ export default function App() {
         .text-accent { color: var(--theme-accent); }
         .border-accent { border-color: var(--theme-accent); }
         .border-primary { border-color: var(--theme-primary); }
+
+        .glass-card {
+          background: rgba(255, 255, 255, 0.82);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.6);
+          box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05);
+        }
+
+        .glow-border {
+          box-shadow: 0 0 20px -5px rgba(184, 134, 11, 0.35);
+          border: 1px solid rgba(184, 134, 11, 0.3);
+        }
         
         @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         .animate-shimmer { position: relative; overflow: hidden; }
-        .animate-shimmer::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2.5s infinite; }
+        .animate-shimmer::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); animation: shimmer 2.5s infinite; }
         
-        @keyframes pulseGlow { from { box-shadow: 0 0 5px rgba(255, 165, 0, 0.2); } to { box-shadow: 0 0 15px rgba(255, 165, 0, 0.6); } }
-        .glow-effect { animation: pulseGlow 2s infinite alternate; border: 2px solid #ffd700; }
+        @keyframes pulseGlow { from { box-shadow: 0 0 8px rgba(184, 134, 11, 0.2); } to { box-shadow: 0 0 20px rgba(184, 134, 11, 0.5); } }
+        .glow-effect { animation: pulseGlow 2s infinite alternate; }
         
         @keyframes borderGlowPulse { 
           0% { box-shadow: 0 0 0 0px rgba(245, 158, 11, 0.7); border-color: #f59e0b; }
-          50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); border-color: #f59e0b; }
+          50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); border-color: #f59e0b; }
           100% { box-shadow: 0 0 0 0px rgba(245, 158, 11, 0); border-color: #f59e0b; }
         }
         .order-highlight { animation: borderGlowPulse 2.5s infinite ease-in-out; border-width: 3px !important; }
 
-        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-3px); } 100% { transform: translateY(0px); } }
-        .floating-badge { animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-4px); } 100% { transform: translateY(0px); } }
+        .floating-badge { animation: float 3.5s ease-in-out infinite; }
         
-        .special-bg { background: linear-gradient(135deg, rgba(255,249,240,0.8) 0%, rgba(255,255,255,0.9) 100%); }
+        .special-bg { background: linear-gradient(135deg, rgba(255,251,245,0.92) 0%, rgba(255,243,230,0.95) 100%); }
         
         @keyframes fall { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(360deg); opacity: 0; } }
         .falling-icon { position: fixed; z-index: 10; animation: fall linear infinite; pointer-events: none; font-size: 1.5rem; opacity: 0.6; }
@@ -977,22 +1095,34 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-[50] bg-white/95 p-4 flex justify-between items-center border-b border-gray-100 shadow-sm relative backdrop-blur-md">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }}>
-           {lineProfile.pictureUrl ? <img src={lineProfile.pictureUrl} className="w-10 h-10 rounded-full border-2 border-orange-100" alt="profile" /> : <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center font-bold">🐮</div>}
+      {/* Header UI */}
+      <header className="sticky top-0 z-[50] bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-white/40 shadow-sm p-4 flex justify-between items-center transition-all">
+        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }}>
+           <div className="relative">
+             {lineProfile.pictureUrl ? (
+               <img src={lineProfile.pictureUrl} className="w-11 h-11 rounded-2xl border-2 border-amber-400/60 shadow-md object-cover transition-transform group-hover:scale-105" alt="profile" />
+             ) : (
+               <div className="w-11 h-11 bg-gradient-to-tr from-amber-800 to-amber-900 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-md border border-amber-500/30">🐮</div>
+             )}
+             <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm ${storeSettings.isStoreOpen !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+           </div>
+
            <div>
-             <h1 className="font-serif font-bold text-lg leading-tight text-primary">วัวนมอารมณ์ดี</h1>
-             
-             <div className="flex items-center gap-1 mt-1">
-               <p className="text-[9px] font-bold text-green-700 uppercase tracking-tighter">คุณ {(lineProfile.displayName || 'ลูกค้าทั่วไป').slice(0, 10)}</p>
-               <span className={`text-[8px] px-2 py-0.5 rounded-full font-bold text-white shadow-sm flex items-center gap-1 ${storeSettings.isStoreOpen !== false ? 'bg-green-500' : 'bg-red-500'}`}>
-                 {storeSettings.isStoreOpen !== false ? '🟢 เปิดแล้วค่ะ' : '🔴 ปิดแล้วค่ะ'}
+             <h1 className="font-serif font-extrabold text-lg tracking-tight text-slate-900 leading-tight group-hover:text-amber-800 transition-colors">วัวนมอารมณ์ดี</h1>
+             <div className="flex items-center gap-1.5 mt-0.5">
+               <span className="text-[10px] font-bold text-slate-600 tracking-tight flex items-center gap-1">
+                 <ShieldCheck size={12} className="text-emerald-500" />
+                 คุณ {(lineProfile.displayName || 'ลูกค้าทั่วไป').slice(0, 11)}
+               </span>
+               <span className="text-slate-300">•</span>
+               <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shadow-xs ${storeSettings.isStoreOpen !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                 {storeSettings.isStoreOpen !== false ? 'เปิดร้าน' : 'ปิดร้าน'}
                </span>
              </div>
            </div>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex items-center gap-1.5">
           <button onClick={() => {
             if (localStorage.getItem('happycow_isAdmin') === 'true') {
               setView('admin');
@@ -1000,58 +1130,62 @@ export default function App() {
             } else {
               setShowAdminModal(true);
             }
-          }} className="p-2 text-gray-400 hover:text-primary transition-colors"><Settings size={18}/></button>
-          <button onClick={() => setView('myOrders')} className="p-2 text-gray-400 hover:text-primary transition-colors"><ClipboardList/></button>
-          <button onClick={() => setView('cart')} className="relative p-2 bg-primary text-white rounded-xl w-10 h-10 flex items-center justify-center shadow-lg active:scale-90 transition-all">
-            {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-accent text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-sm">{cart.length}</span>}
-            <ShoppingCart size={20}/>
+          }} className="p-2.5 text-slate-500 hover:text-amber-800 hover:bg-amber-50/80 rounded-xl transition-all active:scale-90"><Settings size={19}/></button>
+          
+          <button onClick={() => setView('myOrders')} className="p-2.5 text-slate-500 hover:text-amber-800 hover:bg-amber-50/80 rounded-xl transition-all active:scale-90 relative">
+            <ClipboardList size={19}/>
+          </button>
+
+          <button onClick={() => setView('cart')} className="relative p-2.5 bg-gradient-to-tr from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all ml-1">
+            {cart.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">{cart.length}</span>}
+            <ShoppingCart size={19}/>
           </button>
         </div>
       </header>
 
-      {isSearchFocused && view === 'shop' && <div className="fixed inset-0 z-[40] bg-black/10 backdrop-blur-sm" onClick={() => setIsSearchFocused(false)}></div>}
+      {isSearchFocused && view === 'shop' && <div className="fixed inset-0 z-[40] bg-black/20 backdrop-blur-xs transition-opacity" onClick={() => setIsSearchFocused(false)}></div>}
 
-      <main className="flex-1 pb-10 relative z-10">
+      <main className="flex-1 pb-12 relative z-10">
         {/* --- Shop View --- */}
         {view === 'shop' && (
-          <div className="animate-in fade-in">
-            <div className="px-5 pt-4 pb-2 sticky top-[73px] z-[45]" style={{ backgroundColor: currentThemeData.bg }}>
+          <div className="animate-in fade-in duration-300">
+            <div className="px-5 pt-4 pb-2 sticky top-[73px] z-[45]" style={{ backgroundColor: `${currentThemeData.bg}f0` }}>
               <div className="relative z-[50]">
-                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input 
                    type="text" 
                    value={searchQuery} 
                    onChange={e => setSearchQuery(e.target.value)}
                    onFocus={() => setIsSearchFocused(true)}
-                   placeholder="ค้นหาเมนูที่คุณอยากดื่ม..." 
-                   className="w-full pl-11 pr-10 py-3.5 rounded-[1.5rem] text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-gray-100 bg-white/90 backdrop-blur-sm" 
+                   placeholder="ค้นหาเมนูเครื่องดื่มที่คุณชอบ..." 
+                   className="w-full pl-11 pr-10 py-3.5 rounded-2xl text-xs font-semibold outline-none shadow-sm focus:shadow-md focus:ring-2 focus:ring-amber-500/50 border border-slate-200/80 bg-white/95 backdrop-blur-md transition-all text-slate-800 placeholder:text-slate-400" 
                 />
                 {searchQuery && (
-                  <button onClick={() => { setSearchQuery(''); setIsSearchFocused(false); setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 active:scale-90 bg-gray-100 rounded-full p-1"><X size={14}/></button>
+                  <button onClick={() => { setSearchQuery(''); setIsSearchFocused(false); setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 active:scale-90 bg-slate-100 hover:bg-slate-200 rounded-full p-1"><X size={14}/></button>
                 )}
               </div>
 
               {isSearchFocused && !searchQuery && (searchHistory.length > 0 || popularSearches.length > 0) && (
-                <div className="absolute top-[110%] left-5 right-5 bg-white/95 backdrop-blur-md rounded-[2rem] shadow-2xl border border-gray-100 p-5 z-[50] animate-in fade-in slide-in-from-top-2">
+                <div className="absolute top-[110%] left-5 right-5 bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-100 p-5 z-[50] animate-in fade-in slide-in-from-top-2">
                    {searchHistory.length > 0 && (
-                      <div className="mb-5">
-                         <div className="flex justify-between items-center mb-3">
-                            <h4 className="text-[11px] font-bold text-gray-400 flex items-center gap-1 uppercase tracking-wider"><Clock size={14}/> ประวัติการค้นหา</h4>
-                            <button onClick={() => { setSearchHistory([]); setSearchQuery(''); setIsSearchFocused(false); setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="text-[10px] text-red-400 font-bold bg-red-50 px-2 py-1 rounded-lg">ล้าง</button>
+                      <div className="mb-4">
+                         <div className="flex justify-between items-center mb-2.5">
+                            <h4 className="text-[10px] font-extrabold text-slate-400 flex items-center gap-1 uppercase tracking-wider"><Clock size={13}/> ประวัติการค้นหา</h4>
+                            <button onClick={() => { setSearchHistory([]); setSearchQuery(''); setIsSearchFocused(false); setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="text-[10px] text-rose-500 font-bold bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg transition-colors">ล้าง</button>
                          </div>
-                         <div className="flex flex-wrap gap-2">
+                         <div className="flex flex-wrap gap-1.5">
                             {searchHistory.map(h => (
-                               <button key={h} onClick={() => handleSearchSubmit(h)} className="bg-gray-50 hover:bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full text-xs border border-gray-200 transition-all">{h}</button>
+                               <button key={h} onClick={() => handleSearchSubmit(h)} className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200/70 transition-all">{h}</button>
                             ))}
                          </div>
                       </div>
                    )}
                    {popularSearches.length > 0 && (
                       <div>
-                         <h4 className="text-[11px] font-bold text-orange-500 flex items-center gap-1 mb-3 uppercase tracking-wider"><TrendingUp size={14}/> คำค้นหายอดฮิต 🔥</h4>
-                         <div className="flex flex-wrap gap-2">
+                         <h4 className="text-[10px] font-extrabold text-amber-600 flex items-center gap-1 mb-2.5 uppercase tracking-wider"><TrendingUp size={13}/> คำค้นหายอดฮิต 🔥</h4>
+                         <div className="flex flex-wrap gap-1.5">
                             {popularSearches.map(p => (
-                               <button key={p} onClick={() => handleSearchSubmit(p)} className="bg-orange-50 hover:bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs border border-orange-100 font-bold transition-all shadow-sm">{p}</button>
+                               <button key={p} onClick={() => handleSearchSubmit(p)} className="bg-amber-50 hover:bg-amber-100 text-amber-900 px-3 py-1.5 rounded-xl text-xs font-bold border border-amber-200/60 transition-all shadow-2xs">{p}</button>
                             ))}
                          </div>
                       </div>
@@ -1060,26 +1194,27 @@ export default function App() {
               )}
             </div>
 
+            {/* Promoted Items Slider */}
             {!searchQuery && promotedItems.length > 0 && (
               <div className="pt-2 pb-2">
-                <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3">
+                <div ref={sliderRef} className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth w-full px-5 gap-3.5">
                   {promotedItems.map(item => (
-                    <div key={`promo-${item.id}`} className="w-[85%] flex-shrink-0 snap-center">
-                      <div onClick={() => openOptionModal(item)} className={`bg-white/90 backdrop-blur-sm rounded-[2rem] p-3 shadow-md flex items-center gap-4 border border-orange-100 transition-all h-full relative overflow-hidden animate-shimmer glow-effect ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'}`}>
+                    <div key={`promo-${item.id}`} className="w-[88%] flex-shrink-0 snap-center">
+                      <div onClick={() => openOptionModal(item)} className={`bg-gradient-to-br from-amber-900 via-amber-800 to-amber-950 text-white rounded-3xl p-4 shadow-xl flex items-center gap-4 border border-amber-500/30 transition-all h-full relative overflow-hidden animate-shimmer ${item.isSoldOut ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-98'}`}>
                          <div className="relative">
-                            <img src={item.image} className={`w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-sm flex-shrink-0`} alt={item.name} />
+                            <img src={item.image} className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-2xl shadow-lg border border-amber-400/20 flex-shrink-0" alt={item.name} />
                             <div className="absolute -bottom-2 -right-2 text-2xl floating-badge drop-shadow-md">🔥</div>
                             {item.isSoldOut && (
-                               <div className="absolute top-1 -left-1 bg-gray-700 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-lg border border-gray-600 rotate-[-5deg] z-10">หมด</div>
+                               <div className="absolute top-1 -left-1 bg-slate-900/90 text-white px-2.5 py-0.5 rounded-md font-bold text-[9px] shadow-lg border border-slate-700 rotate-[-5deg] z-10">หมด</div>
                             )}
                          </div>
-                         <div className="flex-1 flex flex-col justify-center py-1 pr-2">
-                            <span className="text-[9px] bg-gradient-to-r from-red-500 to-orange-400 text-white px-2 py-1 rounded-full w-fit mb-1.5 font-bold flex items-center gap-1 shadow-md">
-                               <Star size={10} fill="white"/> เมนูแนะนำ (Must Try!)
+                         <div className="flex-1 flex flex-col justify-center py-1 pr-1">
+                            <span className="text-[9px] bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-full w-fit mb-2 font-black flex items-center gap-1 shadow-sm uppercase tracking-wider">
+                               <Star size={10} fill="currentColor"/> Must Try
                             </span>
-                            <h4 className="font-bold text-sm leading-tight line-clamp-2 text-primary">{item.name}</h4>
-                            <p className="text-accent font-bold text-base mt-1">฿{item.price}</p>
-                            <p className="text-[9px] text-orange-600 font-bold mt-1 bg-orange-50 w-fit px-1.5 py-0.5 rounded shadow-sm">สูตรลับเฉพาะทางร้าน ✨</p>
+                            <h4 className="font-extrabold text-sm leading-snug line-clamp-2 text-white">{item.name}</h4>
+                            <p className="text-amber-300 font-black text-lg mt-1">฿{item.price}</p>
+                            <p className="text-[9px] text-amber-200/80 font-medium mt-1">สูตรเข้มข้นเฉพาะร้าน 🐮✨</p>
                          </div>
                       </div>
                     </div>
@@ -1088,80 +1223,128 @@ export default function App() {
               </div>
             )}
 
+            {/* Store Conditions Alert */}
             {!searchQuery && (
-              <div className="mx-5 mb-2 mt-4 p-4 bg-white/80 backdrop-blur-sm border-l-4 border-l-[var(--theme-accent)] rounded-r-2xl shadow-sm animate-in fade-in relative overflow-hidden">
-                <h4 className="text-xs font-bold text-accent mb-2 flex items-center gap-1"><AlertCircle size={14}/> เงื่อนไขการสั่งซื้อ (รบกวนอ่านก่อนนะคะ 💖)</h4>
-                <ul className="text-[10.5px] text-gray-700 space-y-1.5 pl-4 list-disc font-medium">
-                  <li>ส่งถึงหน้าห้อง <span className="font-bold text-accent">เฉพาะกรณีเข้าตึกได้</span> เท่านั้น</li>
-                  <li>หากเข้าตึกไม่ได้ / ฝนตก / ลิฟต์พัง ขออนุญาต <span className="font-bold text-accent">แขวนไว้ใต้ตึก</span></li>
-                  <li>ระยะเวลารอออร์เดอร์ประมาณ <span className="font-bold">20 นาที (+/-)</span></li>
-                  <li>ทางร้านรีบทำและจัดส่งตามคิว <span className="font-bold text-red-500">ขอความกรุณางดเร่งนะคะ 🙏</span></li>
+              <div className="mx-5 mb-2 mt-3 p-4 glass-card rounded-2xl shadow-sm animate-in fade-in relative overflow-hidden border-l-4 border-l-amber-600">
+                <h4 className="text-xs font-bold text-amber-900 mb-1.5 flex items-center gap-1.5"><AlertCircle size={15} className="text-amber-600"/> เงื่อนไขการจัดส่ง (รบกวนอ่านก่อนสั่งซื้อค่ะ)</h4>
+                <ul className="text-[10.5px] text-slate-600 space-y-1 pl-4 list-disc font-medium leading-relaxed">
+                  <li>จัดส่งถึงหน้าห้อง <span className="font-bold text-amber-800">กรณีเข้าตึกได้</span> เท่านั้น</li>
+                  <li>หากเข้าตึกไม่ได้ / ฝนตก / ลิฟต์เสีย ขออนุญาต <span className="font-bold text-amber-800">แขวนไว้ใต้ตึก</span></li>
+                  <li>ระยะเวลารอประมาณ <span className="font-bold">20 นาที (+/-)</span> ตามลำดับคิว 🙏</li>
+                  {storeSettings.minOrderAmount > 0 && (
+                    <li className="text-amber-900 font-bold">ยอดสั่งซื้อขั้นต่ำ <span className="text-rose-600">฿{storeSettings.minOrderAmount}</span> ต่อหนึ่งออร์เดอร์ค่ะ</li>
+                  )}
                 </ul>
               </div>
             )}
 
             {!searchQuery && storeSettings.isBlendOut && (
-              <div className="mx-5 mb-2 mt-2 p-3 bg-blue-50 border border-blue-200 rounded-2xl shadow-sm animate-in fade-in text-center flex items-center justify-center gap-2">
+              <div className="mx-5 mb-2 mt-2 p-3 bg-blue-50/90 border border-blue-200 rounded-2xl shadow-2xs animate-in fade-in text-center flex items-center justify-center gap-2">
                  <Zap size={16} className="text-blue-500"/>
-                 <p className="text-xs font-bold text-blue-700">ขออภัยค่ะ วันนี้งดรับออร์เดอร์ <span className="text-red-500">เมนูปั่น</span> ชั่วคราวนะคะ 🙏</p>
+                 <p className="text-xs font-bold text-blue-900">ขออภัยค่ะ วันนี้งดรับออร์เดอร์ <span className="text-rose-600">เมนูปั่น</span> ชั่วคราวนะคะ 🙏</p>
               </div>
             )}
 
             {!searchQuery && (
-              <div className="flex gap-2 overflow-x-auto hide-scrollbar px-5 py-3 sticky top-[138px] z-[40] backdrop-blur-md" style={{ backgroundColor: `${currentThemeData.bg}e6` }}>
+              <div className="flex gap-2 overflow-x-auto hide-scrollbar px-5 py-3 sticky top-[138px] z-[40] backdrop-blur-xl border-b border-slate-200/50" style={{ backgroundColor: `${currentThemeData.bg}e6` }}>
                 {CATEGORIES.map(c => (
-                  <button key={c} onClick={() => setActiveCategory(c)} className={`px-5 py-2.5 rounded-2xl text-[11px] font-bold whitespace-nowrap transition-all border ${activeCategory === c && c === '🔥 เมนูขายดี' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : activeCategory === c ? 'bg-primary text-white border-primary shadow-md' : 'bg-white/90 text-gray-500 border-gray-100 hover:bg-white'}`}>{c}</button>
+                  <button 
+                    key={c} 
+                    onClick={() => setActiveCategory(c)} 
+                    className={`px-4 py-2.5 rounded-2xl text-[11px] font-extrabold whitespace-nowrap transition-all border ${
+                      activeCategory === c && c === '🔥 เมนูขายดี' 
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white border-amber-600 shadow-md' 
+                        : activeCategory === c 
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                          : 'bg-white/90 text-slate-600 border-slate-200/70 hover:bg-white hover:text-slate-900'
+                    }`}
+                  >
+                    {c}
+                  </button>
                 ))}
               </div>
             )}
 
-            <div className="px-5 pb-5 pt-2">
-              {searchQuery && <p className="text-sm font-bold text-primary mb-4 ml-1">ผลการค้นหา "{searchQuery}" ({displayedItems.length} รายการ)</p>}
-              {isLoading ? <div className="p-20 text-center opacity-30 italic font-bold text-primary animate-pulse">กำลังโหลดความสดชื่น... 🐮</div> : (
-                <div className="grid grid-cols-2 gap-5">
+            {/* Product Menu Cards Grid */}
+            <div className="px-5 pb-6 pt-3">
+              {searchQuery && <p className="text-xs font-extrabold text-slate-700 mb-4 ml-1">ผลการค้นหา "{searchQuery}" ({displayedItems.length} รายการ)</p>}
+              
+              {isLoading ? (
+                <div className="py-24 text-center opacity-40 italic font-bold text-amber-900 animate-pulse">
+                  กำลังโหลดรายการเครื่องดื่ม... 🐮
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
                   {displayedItems.map((item, index) => {
                     const isSpecial = item.category === 'วิปครีมและครีมชีส' || item.category === 'ครีมและครีมชีส' || item.category === 'เมนูพิเศษ';
                     const isBestSeller = !searchQuery && activeCategory === '🔥 เมนูขายดี';
                     const isBlendUnavailable = item.isOnlyBlend && storeSettings.isBlendOut;
                     const isDisabled = item.isSoldOut || isBlendUnavailable;
+
                     return (
-                    <div key={item.id} onClick={() => openOptionModal(item)} className={`rounded-[2rem] overflow-hidden shadow-sm transition-all relative ${isSpecial ? 'special-bg glow-effect border border-orange-100' : 'bg-white/90 backdrop-blur-sm border border-white/50'} ${isDisabled ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:-translate-y-1 active:scale-95'}`}>
-                      
+                    <div 
+                      key={item.id} 
+                      onClick={() => openOptionModal(item)} 
+                      className={`rounded-3xl overflow-hidden shadow-xs hover:shadow-xl transition-all duration-300 relative border flex flex-col justify-between ${
+                        isSpecial 
+                          ? 'special-bg border-amber-200/70 glow-effect' 
+                          : 'bg-white/95 border-slate-200/80'
+                      } ${
+                        isDisabled ? 'cursor-not-allowed opacity-75' : 'cursor-pointer hover:-translate-y-1 active:scale-97'
+                      }`}
+                    >
                       {item.isSoldOut && (
-                         <div className="absolute top-2 left-2 bg-gray-700 text-white px-3 py-1.5 rounded-xl font-bold text-[11px] shadow-lg border border-gray-600 rotate-[-5deg] z-20 tracking-wider">หมด</div>
+                         <div className="absolute top-2.5 left-2.5 bg-slate-900/90 text-white px-2.5 py-1 rounded-xl font-bold text-[10px] shadow-lg border border-slate-700 rotate-[-5deg] z-20 tracking-wider">หมดชั่วคราว</div>
                       )}
                       
                       {!item.isSoldOut && isBlendUnavailable && (
-                         <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
-                            <div className="bg-blue-500 text-white px-4 py-1.5 rounded-full font-bold text-[11px] border border-blue-200 shadow-xl rotate-[-10deg] tracking-wider text-center leading-tight">เมนูปั่น<br/>หมดชั่วคราว</div>
+                         <div className="absolute inset-0 bg-white/60 backdrop-blur-xs z-20 flex items-center justify-center p-2">
+                            <div className="bg-blue-600 text-white px-3 py-1.5 rounded-2xl font-bold text-[10px] border border-blue-300 shadow-xl rotate-[-8deg] text-center leading-tight">เมนูปั่น<br/>พักชั่วคราว</div>
                          </div>
                       )}
 
-                      {item.hasFreePearl && !isDisabled && <div className="absolute top-2 right-2 bg-gradient-to-r from-orange-400 to-red-400 text-white text-[8px] px-2 py-0.5 rounded-full font-bold shadow-md z-10 flex items-center gap-0.5 floating-badge"><Star size={8} fill="white"/> ฟรีไข่มุก!</div>}
+                      {item.hasFreePearl && !isDisabled && (
+                        <div className="absolute top-2.5 right-2.5 bg-gradient-to-r from-amber-500 to-rose-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black shadow-md z-10 flex items-center gap-0.5 floating-badge">
+                          <Star size={8} fill="white"/> ฟรีมุก
+                        </div>
+                      )}
                       
                       {isBestSeller && !item.isSoldOut && (
-                        <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg z-10 shadow-md flex items-center gap-1 border border-white/20">อันดับ {index + 1} 👑</div>
+                        <div className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-lg z-10 shadow-md flex items-center gap-1 border border-white/20">
+                          Top {index + 1} 👑
+                        </div>
                       )}
                       
                       {isSpecial && !isBestSeller && !item.isSoldOut && (
-                        <div className="absolute top-2 left-2 bg-accent text-white text-[9px] font-bold px-2 py-1 rounded-lg z-10 shadow-md">🌟 Limited</div>
+                        <div className="absolute top-2.5 left-2.5 bg-amber-800 text-white text-[9px] font-bold px-2 py-0.5 rounded-lg z-10 shadow-md">
+                          🌟 Premium
+                        </div>
                       )}
 
-                      <div className="aspect-square bg-gray-50 relative">
-                         <img src={item.image} className={`w-full h-full object-cover`} alt={item.name} />
+                      <div className="aspect-square bg-slate-50 relative overflow-hidden">
+                         <img src={item.image} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" alt={item.name} />
                       </div>
-                      <div className="p-4 text-center">
-                        <h4 className="font-bold text-sm mb-1 line-clamp-1 text-primary">{item.name}</h4>
-                        <p className="text-accent font-bold text-sm">฿{item.price}</p>
-                        {isSpecial && !isBestSeller && <p className="text-[8px] text-accent mt-1 font-bold">เมนูสุดพรีเมียม</p>}
+
+                      <div className="p-3.5 text-left flex flex-col justify-between flex-1">
+                        <div>
+                          <h4 className="font-bold text-xs text-slate-800 line-clamp-1 mb-1 leading-snug">{item.name}</h4>
+                          <p className="text-[10px] text-slate-400 font-medium">{item.category}</p>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                          <p className="text-amber-800 font-black text-sm">฿{item.price}</p>
+                          <span className="w-7 h-7 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 flex items-center justify-center active:scale-90 transition-transform">
+                            <Plus size={15} />
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )})}
                   
                   {displayedItems.length === 0 && (
-                    <div className="col-span-2 py-20 text-center flex flex-col items-center gap-4 bg-white/50 rounded-3xl backdrop-blur-sm">
-                      <AlertCircle size={40} className="text-gray-300" />
-                      <p className="text-gray-500 text-sm font-bold">
+                    <div className="col-span-2 py-20 text-center flex flex-col items-center gap-3 bg-white/60 rounded-3xl backdrop-blur-md border border-slate-200/50">
+                      <AlertCircle size={36} className="text-slate-300" />
+                      <p className="text-slate-500 text-xs font-bold">
                         {searchQuery ? `ไม่พบเมนูที่ตรงกับ "${searchQuery}"` : `ยังไม่มีเมนูในหมวด "${activeCategory}"`}
                       </p>
                     </div>
@@ -1174,66 +1357,88 @@ export default function App() {
 
         {/* --- Cart View --- */}
         {view === 'cart' && (
-          <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl relative z-20">
-            <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-gray-400 text-sm hover:text-primary transition-colors"><ChevronLeft size={20}/> เลือกเมนูเพิ่ม</button>
-            <h2 className="text-3xl font-serif font-bold text-primary">ตะกร้าของคุณ</h2>
-            <div className="space-y-4">
+          <div className="p-6 space-y-6 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl relative z-20 animate-in slide-in-from-bottom-6 duration-300">
+            <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-slate-400 text-xs hover:text-slate-800 transition-colors"><ChevronLeft size={18}/> เลือกเครื่องดื่มเพิ่ม</button>
+            
+            <div className="flex justify-between items-end border-b border-slate-100 pb-3">
+              <h2 className="text-2xl font-serif font-black text-slate-900">ตะกร้าของคุณ</h2>
+              <span className="text-xs font-bold text-slate-400">{cart.length} รายการ</span>
+            </div>
+
+            {/* [ADDED] Minimum Order Warning Banner in Cart */}
+            {cart.length > 0 && isBelowMinOrder && (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl shadow-xs animate-in fade-in flex items-start gap-3">
+                <AlertCircle size={20} className="text-amber-700 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 text-xs">
+                  <p className="font-bold text-amber-950">ยอดสั่งซื้อยังไม่ถึงขั้นต่ำของร้าน</p>
+                  <p className="text-amber-800 mt-0.5">
+                    ร้านกำหนดยอดสั่งซื้อขั้นต่ำ <span className="font-extrabold text-slate-900">฿{storeSettings.minOrderAmount}</span> (ยังขาดอีก <span className="font-extrabold text-rose-600">฿{minOrderShortage}</span>)
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
                {cart.map(i => (
-                 <div key={i.cartId} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                   <div className="flex-1 font-bold text-sm text-primary">
+                 <div key={i.cartId} className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-200/60 shadow-2xs">
+                   <div className="flex-1 font-bold text-xs text-slate-800 pr-2">
                      {i.qty}x {i.name} <br/>
-                     <span className="text-gray-400 text-[10px] uppercase">
+                     <span className="text-slate-400 text-[10px] font-medium uppercase leading-relaxed block mt-0.5">
                        ({getBlendText(i)}{isWhipOrCreamCheeseItem(i) ? '' : ` • หวาน ${i.sweetness}`}{i.bean ? ` • ${i.bean}` : ''}{i.teaType ? ` • ${i.teaType}` : ''}{i.addShot ? ' • เพิ่มช็อต' : ''}{i.separateIce ? ' • แยกน้ำแข็ง (+฿5)' : ''}{i.hasFreePearl ? (i.addPearl ? ' • มุกฟรี' : ' • ไม่รับมุกฟรี') : ''})
                        {i.selectedSauces?.length > 0 && ` • ราดซอส: ${i.selectedSauces.map(s => typeof s === 'object' ? s.name : s).join(', ')}`}
                        {i.selectedToppings?.length > 0 && ` • เพิ่ม: ${i.selectedToppings.map(t=>t.name).join(', ')}`}
                      </span>
                    </div>
-                   <div className="flex items-center gap-4"><p className="font-bold text-accent">฿{i.price * i.qty}</p><button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div>
+                   <div className="flex items-center gap-3">
+                     <p className="font-black text-amber-800 text-sm">฿{i.price * i.qty}</p>
+                     <button onClick={() => setCart(prev => prev.filter(item => item.cartId !== i.cartId))} className="text-rose-300 hover:text-rose-600 transition-colors p-1"><Trash2 size={16}/></button>
+                   </div>
                  </div>
                ))}
-               {cart.length === 0 && <div className="py-20 text-center opacity-30 italic font-bold text-gray-400">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
+               {cart.length === 0 && <div className="py-20 text-center opacity-40 italic font-bold text-slate-400 text-xs">ยังไม่มีสินค้าในตะกร้า 🐮</div>}
             </div>
 
             {cart.length > 0 && (
-              <div className="space-y-6 pt-6 border-t border-gray-100">
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-accent uppercase tracking-wider block">วิธีชำระเงิน</label>
+              <div className="space-y-5 pt-4 border-t border-slate-100">
+                <div className="space-y-2.5">
+                  <label className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider block">เลือกช่องทางชำระเงิน</label>
                   <div className="grid grid-cols-3 gap-2">
-                    <button onClick={() => setPaymentMethod('promptpay')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><CreditCard size={18}/><span className="text-[9px] text-center leading-tight">โอนพร้อมเพย์</span></button>
-                    <button onClick={() => setPaymentMethod('cash')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><Banknote size={18}/><span className="text-[9px] text-center leading-tight">ชำระเงินสด</span></button>
-                    <button onClick={() => setPaymentMethod('thaichueithai')} className={`py-4 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-2 transition-all ${paymentMethod === 'thaichueithai' ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white'}`}><Sparkles size={18} className="text-orange-500" fill="currentColor"/><span className="text-[9px] text-center leading-tight">ไทยช่วยไทยพลัส</span></button>
+                    <button onClick={() => setPaymentMethod('promptpay')} className={`py-3.5 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${paymentMethod === 'promptpay' ? 'border-amber-600 bg-amber-50/60 text-amber-900 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><CreditCard size={18}/><span className="text-[9px] text-center font-bold">โอนพร้อมเพย์</span></button>
+                    <button onClick={() => setPaymentMethod('cash')} className={`py-3.5 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${paymentMethod === 'cash' ? 'border-amber-600 bg-amber-50/60 text-amber-900 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><Banknote size={18}/><span className="text-[9px] text-center font-bold">ชำระเงินสด</span></button>
+                    <button onClick={() => setPaymentMethod('thaichueithai')} className={`py-3.5 px-1 rounded-2xl border-2 font-bold flex flex-col items-center justify-center gap-1.5 transition-all ${paymentMethod === 'thaichueithai' ? 'border-amber-600 bg-amber-50/60 text-amber-900 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><Sparkles size={18} className="text-amber-500" fill="currentColor"/><span className="text-[9px] text-center font-bold">ไทยช่วยไทยพลัส</span></button>
                   </div>
                 </div>
-                <div className="space-y-4">
+
+                <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-bold text-accent uppercase tracking-wider block mb-2">ที่อยู่จัดส่ง</label>
-                    <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเลขที่ห้อง / ชื่อตึก / จุดสังเกต..." className="w-full p-5 rounded-3xl bg-gray-50 h-24 text-sm outline-none border border-transparent focus:border-accent focus:bg-white transition-all shadow-inner" />
+                    <label className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider block mb-1.5">ที่อยู่จัดส่ง</label>
+                    <textarea value={address} onChange={e => setAddress(e.target.value)} placeholder="ระบุเลขที่ห้อง / ชื่อตึก / จุดสังเกต..." className="w-full p-4 rounded-2xl bg-slate-50/90 text-xs outline-none border border-slate-200/70 focus:border-amber-600 focus:bg-white transition-all h-20 shadow-inner font-medium text-slate-800" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-accent uppercase tracking-wider block mb-2 flex items-center gap-1"><MessageSquare size={14}/> หมายเหตุถึงร้านค้า</label>
-                    <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อย, ไม่รับหลอด..." className="w-full p-4 rounded-2xl bg-gray-50 text-sm outline-none border border-transparent focus:border-accent focus:bg-white transition-all shadow-inner" />
+                    <label className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider block mb-1.5 flex items-center gap-1"><MessageSquare size={13}/> หมายเหตุเพิ่มเติม</label>
+                    <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น หวานน้อย, ไม่รับหลอด..." className="w-full p-3.5 rounded-2xl bg-slate-50/90 text-xs outline-none border border-slate-200/70 focus:border-amber-600 focus:bg-white transition-all shadow-inner font-medium text-slate-800" />
                   </div>
                 </div>
                 
                 {paymentMethod === 'promptpay' && (
-                  <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 text-center relative overflow-hidden">
-                    <p className="text-xs font-bold mb-4 text-primary">สแกนชำระเงิน พร้อมแนบสลิป</p>
+                  <div className="bg-slate-50 p-5 rounded-3xl border-2 border-dashed border-slate-200 text-center relative overflow-hidden">
+                    <p className="text-xs font-bold mb-3 text-slate-800">สแกน QR Code เพื่อชำระเงิน 📱</p>
                     {storeSettings.qrCodeImage ? (
-                      <img src={storeSettings.qrCodeImage} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl object-contain shadow-sm" alt="QR Code ร้าน" />
+                      <img src={storeSettings.qrCodeImage} className="w-36 h-36 mx-auto mb-3 bg-white p-2 rounded-2xl object-contain shadow-sm border border-slate-100" alt="QR Code ร้าน" />
                     ) : (
-                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cartTotal}`} className="w-40 h-40 mx-auto mb-4 bg-white p-2 rounded-xl" alt="QR Code อัตโนมัติ" />
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:${storeSettings.promptPayNo}:${cartTotal}`} className="w-36 h-36 mx-auto mb-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm" alt="QR Code อัตโนมัติ" />
                     )}
                     
-                    <div className="flex items-center justify-center gap-2 mb-6">
-                      <p className="text-xs text-gray-500 font-bold">พร้อมเพย์: {storeSettings.promptPayNo || '0812345678'}</p>
-                      <button onClick={copyPromptPay} className="flex items-center gap-1 bg-white border border-gray-200 text-accent px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-all">
-                        {isCopied ? <CheckCircle size={14} className="text-green-500"/> : <Copy size={14}/>}
-                        <span className="text-[10px] font-bold">{isCopied ? 'คัดลอกแล้ว' : 'คัดลอกเลข'}</span>
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <p className="text-xs text-slate-600 font-extrabold">พร้อมเพย์: {storeSettings.promptPayNo || '0812345678'}</p>
+                      <button onClick={copyPromptPay} className="flex items-center gap-1 bg-white border border-slate-200 text-amber-800 px-2.5 py-1 rounded-full shadow-2xs active:scale-95 transition-all">
+                        {isCopied ? <CheckCircle size={13} className="text-emerald-500"/> : <Copy size={13}/>}
+                        <span className="text-[10px] font-bold">{isCopied ? 'คัดลอกแล้ว' : 'คัดลอก'}</span>
                       </button>
                     </div>
 
-                    <label className="cursor-pointer bg-primary text-white py-4 px-8 rounded-2xl text-[11px] font-bold inline-flex items-center gap-2 shadow-lg active:scale-95 transition-all">
-                      <Upload size={18}/> {slipImage ? 'เปลี่ยนรูปสลิปใหม่' : 'แนบรูปสลิป'}
+                    <label className="cursor-pointer bg-slate-900 text-white py-3 px-6 rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-md active:scale-95 transition-all">
+                      <Upload size={16}/> {slipImage ? 'เปลี่ยนรูปสลิป' : 'แนบรูปหลักฐานการโอน'}
                       <input type="file" accept="image/*" className="hidden" onChange={async e => {
                         const file = e.target.files[0];
                         if (file) {
@@ -1252,17 +1457,17 @@ export default function App() {
                     </label>
 
                     {slipImage && (
-                       <div className="mt-5 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-                          <img src={slipImage} className="h-32 mx-auto rounded-lg shadow-sm border border-gray-100 mb-3 object-contain bg-gray-50" alt="Slip Preview" />
+                       <div className="mt-4 bg-white p-3 rounded-2xl shadow-xs border border-slate-100">
+                          <img src={slipImage} className="h-32 mx-auto rounded-xl shadow-xs border border-slate-100 mb-2 object-contain bg-slate-50" alt="Slip Preview" />
                           {slipStatus === 'checking' && (
-                             <div className="flex flex-col items-center gap-2 text-blue-500 animate-pulse">
-                               <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                               <span className="text-[10px] font-bold">กำลังตรวจสอบความถูกต้องของสลิป...</span>
+                             <div className="flex flex-col items-center gap-1.5 text-blue-600 animate-pulse">
+                               <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                               <span className="text-[10px] font-bold">กำลังตรวจสอบสลิป...</span>
                              </div>
                           )}
                           {slipStatus === 'valid' && (
-                             <div className="bg-green-50 text-green-600 p-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-green-100 animate-in zoom-in">
-                               <CheckCircle size={14}/> ตรวจพบสลิปเรียบร้อย
+                             <div className="bg-emerald-50 text-emerald-700 p-1.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 border border-emerald-200">
+                               <CheckCircle size={13}/> ตรวจพบสลิปการโอนแล้ว
                              </div>
                           )}
                        </div>
@@ -1271,27 +1476,22 @@ export default function App() {
                 )}
 
                 {paymentMethod === 'thaichueithai' && (
-                  <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 text-center relative overflow-hidden animate-in fade-in zoom-in-95">
-                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <Sparkles className="text-orange-500" size={24} fill="currentColor" />
+                  <div className="bg-amber-50/80 p-5 rounded-3xl border-2 border-dashed border-amber-200 text-center relative overflow-hidden">
+                    <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <Sparkles className="text-amber-600" size={20} fill="currentColor" />
                     </div>
-                    <p className="text-sm font-bold text-orange-900 leading-snug mb-1">ชำระเงินด้วยไทยช่วยไทยพลัส</p>
-                    <p className="text-xs text-orange-700 font-semibold leading-relaxed">
-                      หากลูกค้าชำระเงินด้วยไทยช่วยไทยพลัส <br/>
-                      <span className="text-red-500 font-bold underline">แอดมินจะส่งคิวอาร์โค้ดให้ใน LINE นะคะ 🐮💖</span>
+                    <p className="text-xs font-bold text-amber-900 mb-1">ชำระเงินด้วยไทยช่วยไทยพลัส</p>
+                    <p className="text-[11px] text-amber-800 font-semibold leading-relaxed">
+                      แอดมินจะส่ง QR Code ให้ทาง LINE นะคะ 🐮💖
                     </p>
-                    <p className="text-[9.5px] text-gray-400 mt-4 leading-normal">*กรุณากดสั่งซื้อด้านล่างเพื่อบันทึกข้อมูลออเดอร์ในระบบก่อนค่ะ</p>
                   </div>
                 )}
                 
-                <label className="flex items-start gap-3 p-4 rounded-2xl border bg-gray-50 transition-all cursor-pointer shadow-sm">
-                  <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 w-5 h-5 accent-green-600 cursor-pointer flex-shrink-0" />
+                <label className="flex items-start gap-3 p-3.5 rounded-2xl border bg-slate-50/80 transition-all cursor-pointer shadow-2xs">
+                  <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer flex-shrink-0" />
                   <div className="flex-1">
-                    <p className="text-xs font-bold text-primary mb-1">ยอมรับเงื่อนไขการส่งและสั่งซื้อ</p>
-                    <ul className="text-[9.5px] text-gray-600 space-y-1 list-disc pl-3 font-medium">
-                      <li>ส่งหน้าห้องเฉพาะเข้าตึกได้ (เข้าไม่ได้/ฝนตก = แขวนใต้ตึก)</li>
-                      <li>รอออร์เดอร์ 20 นาที (+/-) / จัดส่งตามคิว งดเร่ง</li>
-                    </ul>
+                    <p className="text-xs font-bold text-slate-800 mb-0.5">ยอมรับเงื่อนไขการจัดส่ง</p>
+                    <p className="text-[10px] text-slate-500 font-medium">ส่งหน้าห้องเฉพาะกรณีเข้าตึกได้ (ลิฟต์เสีย/ฝนตก = แขวนใต้ตึก)</p>
                   </div>
                 </label>
                 
@@ -1300,6 +1500,10 @@ export default function App() {
                     onClick={async (e) => {
                       e.preventDefault();
                       if (isProcessingOrder.current) return; 
+                      // [ADDED] Minimum Order Guard Check
+                      if (isBelowMinOrder) {
+                        return showAlert(`ขออภัยค่ะ ร้านกำหนดยอดสั่งซื้อขั้นต่ำ ฿${storeSettings.minOrderAmount} (ขณะนี้ยอดของคุณคือ ฿${cartTotal} ขาดอีก ฿${minOrderShortage}) รบกวนเลือกเครื่องดื่มเพิ่มนะคะ 🐮`);
+                      }
                       if (!address) return showAlert("กรุณากรอกที่อยู่จัดส่งครับ");
                       if (paymentMethod === 'promptpay' && !slipImage) return showAlert("กรุณาแนบสลิปการโอนเงินครับ");
                       
@@ -1325,7 +1529,6 @@ export default function App() {
                           }, { merge: true });
                         }
 
-                        // [MODIFIED] ซิงค์ออร์เดอร์ใหม่ลง Google Sheets ทันที
                         sendOrderToGoogleSheets({
                           orderId: orderRef.id,
                           timestamp: orderTime,
@@ -1382,13 +1585,19 @@ export default function App() {
                         setIsLoading(false);
                       }
                     }}
-                    disabled={isLoading || !acceptedTerms || (paymentMethod === 'promptpay' && !slipImage)} 
-                    className={`w-full py-5 rounded-[2.5rem] font-bold text-lg transition-all shadow-xl active:scale-95 flex justify-center items-center gap-2 ${acceptedTerms && !isLoading && !(paymentMethod === 'promptpay' && !slipImage) ? 'bg-accent text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                    // [MODIFIED] Added isBelowMinOrder to disabled check and updated button text
+                    disabled={isLoading || !acceptedTerms || (paymentMethod === 'promptpay' && !slipImage) || isBelowMinOrder} 
+                    className={`w-full py-4.5 rounded-2xl font-bold text-base transition-all shadow-lg active:scale-97 flex justify-center items-center gap-2 ${acceptedTerms && !isLoading && !(paymentMethod === 'promptpay' && !slipImage) && !isBelowMinOrder ? 'bg-gradient-to-r from-amber-700 to-amber-900 text-white hover:opacity-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                   >
-                     {isLoading ? 'กำลังประมวลผล...' : `ยืนยันการสั่งซื้อ • ฿${cartTotal}`}
+                     {isLoading 
+                       ? 'กำลังบันทึกข้อมูล...' 
+                       : isBelowMinOrder 
+                         ? `ขั้นต่ำ ฿${storeSettings.minOrderAmount} (ขาดอีก ฿${minOrderShortage})` 
+                         : `ยืนยันการสั่งซื้อ • ฿${cartTotal}`
+                     }
                   </button>
                 ) : (
-                  <button disabled className="w-full py-5 bg-gray-300 text-white rounded-[2.5rem] font-bold text-lg cursor-not-allowed">
+                  <button disabled className="w-full py-4 bg-slate-300 text-slate-500 rounded-2xl font-bold text-sm cursor-not-allowed">
                      ร้านปิดรับออเดอร์ชั่วคราว
                   </button>
                 )}
@@ -1399,64 +1608,77 @@ export default function App() {
 
         {/* --- My Orders View --- */}
         {view === 'myOrders' && (
-          <div className="p-6 space-y-6 flex-1 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl relative z-20">
-             <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-gray-400 text-sm hover:text-primary"><ChevronLeft size={20}/> กลับไปหน้าร้าน</button>
-             <h2 className="text-3xl font-serif font-bold text-primary">ประวัติการสั่งซื้อ</h2>
+          <div className="p-6 space-y-6 flex-1 bg-white rounded-t-[3rem] mt-4 min-h-[85vh] shadow-2xl relative z-20 animate-in slide-in-from-bottom-6 duration-300">
+             <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-slate-400 text-xs hover:text-slate-800"><ChevronLeft size={18}/> กลับหน้าร้าน</button>
+             
+             <div className="flex justify-between items-end border-b border-slate-100 pb-3">
+               <h2 className="text-2xl font-serif font-black text-slate-900">ประวัติการสั่งซื้อ</h2>
+               <span className="text-xs font-extrabold text-amber-800">วัวนมอารมณ์ดี</span>
+             </div>
              
              {isLoadingOrders ? (
-                <div className="py-20 flex flex-col items-center justify-center gap-4 animate-in fade-in">
-                   <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-                   <p className="text-accent font-bold text-sm text-center">กำลังเปิดประวัติการสั่งซื้อ<br/>รอระบบสักครู่นะคะ 🐮...</p>
+                <div className="py-24 flex flex-col items-center justify-center gap-3 animate-in fade-in">
+                   <div className="w-10 h-10 border-3 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                   <p className="text-amber-900 font-bold text-xs text-center">กำลังดึงประวัติการสั่งซื้อของคุณ... 🐮</p>
                 </div>
              ) : (
-                 <div className="space-y-6">
+                 <div className="space-y-4">
                    {orders.filter(o => o.userId === lineProfile.userId && !o.isDeleted).map(o => {
                      const dateStr = new Date(o.timestamp).toLocaleString('th-TH');
                      return (
-                       <div key={o.id} className={`bg-white p-6 rounded-[2.5rem] shadow-sm border transition-all duration-500 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : 'border-gray-100'}`}>
-                          <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-4">
+                       <div key={o.id} className={`bg-white p-5 rounded-3xl shadow-sm border transition-all duration-300 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : 'border-slate-200/80'}`}>
+                          <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-3">
                             <div>
-                               <span className="text-[10px] font-bold text-accent uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span>
-                               <p className="text-xs font-bold text-orange-400 mt-1 uppercase">{o.status}</p>
-                               <p className="text-[9px] text-gray-400 mt-1 font-bold"><Clock size={10} className="inline mr-1"/>{dateStr}</p>
+                               <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider">บิล #{o.id.slice(0,6)}</span>
+                               <p className="text-xs font-black text-amber-600 mt-0.5 uppercase">{o.status}</p>
+                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold"><Clock size={11} className="inline mr-1"/>{dateStr}</p>
                             </div>
-                            <div className="text-2xl font-serif font-bold text-primary">฿{o.total}</div>
+                            <div className="text-xl font-serif font-black text-slate-900">฿{o.total}</div>
                           </div>
                           
                           <div className="space-y-1">{(o.items || []).map((item, idx) => (
-                              <p key={idx} className="text-[11px] font-bold text-gray-500">
+                              <p key={idx} className="text-xs font-semibold text-slate-600 leading-snug">
                                 {item.qty}x {item.name} ({getBlendText(item)}{isWhipOrCreamCheeseItem(item) ? '' : ` • หวาน ${item.sweetness}`}{item.bean ? ` • ${item.bean}` : ''}{item.teaType ? ` • ${item.teaType}` : ''}{item.addShot ? ' • เพิ่มช็อต' : ''}{item.separateIce ? ' • แยกน้ำแข็ง' : ''})
                                 {item.selectedSauces?.length > 0 && ` + ราดซอส: ${item.selectedSauces.map(s => typeof s === 'object' ? s.name : s).join(', ')}`}
                                 {item.selectedToppings?.length > 0 && ` + ${item.selectedToppings.map(t=>t.name).join(', ')}`}
                               </p>
                           ))}</div>
 
-                          {o.status === 'completed' && (
-                            <div className="mt-4 pt-4 border-t border-gray-100">
-                              {o.deliveryMessage && (
-                                <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 mb-3">
-                                  <p className="text-[10px] font-bold text-accent mb-1 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากทางร้าน:</p>
-                                  <p className="text-[11px] text-gray-600 font-bold">{o.deliveryMessage}</p>
-                                </div>
-                              )}
-                              {o.hasDeliveryImage && (
-                                <button 
-                                  onClick={() => viewImage(o.id, 'delivery')} 
-                                  disabled={loadingSlipId === o.id}
-                                  className="w-full bg-primary text-white py-3 rounded-xl text-[11px] font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all"
-                                >
-                                   {loadingSlipId === o.id ? (
-                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                   ) : <Camera size={16}/>}
-                                   ดูรูปถ่ายตอนจัดส่งสินค้า
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                            <button 
+                              onClick={() => handleShareOrderBill(o)}
+                              className="w-full bg-[#06C755] hover:bg-emerald-600 text-white py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs active:scale-97 transition-all"
+                            >
+                              <Share2 size={15}/> แชร์บิลไปที่ LINE 💬
+                            </button>
+
+                            {o.status === 'completed' && (
+                              <div className="space-y-2">
+                                {o.deliveryMessage && (
+                                  <div className="bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60">
+                                    <p className="text-[10px] font-bold text-amber-900 mb-0.5 flex items-center gap-1"><MessageSquare size={12}/> ข้อความจากร้าน:</p>
+                                    <p className="text-xs text-slate-700 font-semibold">{o.deliveryMessage}</p>
+                                  </div>
+                                )}
+                                {o.hasDeliveryImage && (
+                                  <button 
+                                    onClick={() => viewImage(o.id, 'delivery')} 
+                                    disabled={loadingSlipId === o.id}
+                                    className="w-full bg-slate-900 text-white py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm active:scale-97 transition-all"
+                                  >
+                                     {loadingSlipId === o.id ? (
+                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                     ) : <Camera size={15}/>}
+                                     ดูรูปจัดส่งสินค้า
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                        </div>
                    )})}
                    {orders.filter(o => o.userId === lineProfile.userId && !o.isDeleted).length === 0 && (
-                      <div className="py-20 text-center text-gray-400 font-bold opacity-50">คุณยังไม่เคยสั่งซื้อสินค้าเลยครับ 🐮</div>
+                      <div className="py-20 text-center text-slate-400 font-bold text-xs opacity-60">คุณยังไม่มีประวัติการสั่งซื้อสินค้าค่ะ 🐮</div>
                    )}
                  </div>
              )}
@@ -1465,27 +1687,27 @@ export default function App() {
 
         {/* --- Admin View --- */}
         {view === 'admin' && (
-          <div className="p-6 bg-white min-h-screen animate-in fade-in relative z-20">
-            <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-gray-400 text-sm mb-6 hover:text-primary"><ChevronLeft size={20}/> กลับหน้าร้าน</button>
-            <div className="flex justify-between items-center mb-6">
-               <h2 className="text-2xl font-serif font-bold text-primary">ระบบแอดมินร้าน</h2>
-               <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95 shadow-sm border border-blue-100"><BellRing size={12}/> เทสเสียงเตือนบิล</button>
+          <div className="p-5 bg-white min-h-screen animate-in fade-in relative z-20">
+            <button onClick={() => { setView('shop'); setActiveCategory('🔥 เมนูขายดี'); }} className="flex items-center gap-2 font-bold text-slate-400 text-xs mb-5 hover:text-slate-800"><ChevronLeft size={18}/> กลับหน้าร้าน</button>
+            <div className="flex justify-between items-center mb-5">
+               <h2 className="text-xl font-serif font-black text-slate-900">แผงควบคุมแอดมิน</h2>
+               <button onClick={playNotificationSound} className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-3 py-1.5 rounded-full flex items-center gap-1 active:scale-95 shadow-2xs border border-blue-200/60"><BellRing size={12}/> ทดสอบเสียงเตือน</button>
             </div>
             
-            <div className="flex gap-1 bg-gray-50 p-1 rounded-2xl mb-6 shadow-inner border border-gray-100">
+            <div className="flex gap-1 bg-slate-100 p-1.5 rounded-2xl mb-6 shadow-inner border border-slate-200/50">
               {['orders', 'menus', 'dashboard', 'settings'].map(t => (
-                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] sm:text-xs font-bold transition-all ${adminTab === t ? 'bg-primary text-white shadow-md' : 'text-gray-500 hover:text-primary uppercase hover:bg-gray-200'}`}>
+                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-2.5 rounded-xl text-[10px] sm:text-xs font-black transition-all ${adminTab === t ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-900 uppercase'}`}>
                   {t === 'orders' ? 'ออร์เดอร์' : t === 'menus' ? 'เมนู' : t === 'dashboard' ? 'แดชบอร์ด' : 'ตั้งค่า'}
                 </button>
               ))}
             </div>
 
-            {/* [MODIFIED] TAB: แดชบอร์ดวิเคราะห์และจัดการข้อมูลในเว็บ */}
+            {/* TAB: แดชบอร์ด (Google Sheets Only) */}
             {adminTab === 'dashboard' && (
-              <div className="space-y-6 animate-in fade-in">
-                
-                {/* 🌟 1. Google Sheets Live Sync Control Bar */}
-                <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-5 rounded-[2.5rem] shadow-lg flex flex-col sm:flex-row justify-between items-center gap-3 border border-emerald-700">
+              <div className="space-y-6 animate-in fade-in duration-300">
+
+                {/* 1. Google Sheets Live Sync Control Bar */}
+                <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-5 rounded-3xl shadow-lg flex flex-col sm:flex-row justify-between items-center gap-3 border border-emerald-700">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
                       <Database size={22} />
@@ -1493,348 +1715,268 @@ export default function App() {
                     <div>
                       <h4 className="font-bold text-xs flex items-center gap-1.5">
                         Google Sheets Real-time Sync
-                        <span className={`w-2 h-2 rounded-full ${storeSettings.googleSheetUrl ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${storeSettings?.googleSheetUrl ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`}></span>
                       </h4>
                       <p className="text-[10px] text-emerald-200/80 font-medium">
-                        {storeSettings.googleSheetUrl ? 'เชื่อมต่อระบบคลาวด์สำเร็จ (พร้อมซิงค์ข้อมูล)' : 'ยังไม่ได้ใส่ URL Google Sheets ในหน้าตั้งค่า'}
+                        {storeSettings?.googleSheetUrl ? `เชื่อมต่อระบบคลาวด์แล้ว (${sheetStats?.totalOrdersCount || 0} บิลถาวร)` : 'ยังไม่ได้ใส่ URL Google Sheets ในหน้าตั้งค่า'}
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button 
+                      onClick={fetchDashboardDataFromGoogleSheets} 
+                      disabled={isLoadingSheetDashboard}
+                      className="flex-1 sm:flex-initial bg-emerald-500 hover:bg-emerald-400 text-white px-3 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isLoadingSheetDashboard ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Sparkles size={14}/>}
+                      {isLoadingSheetDashboard ? 'กำลังโหลด...' : 'รีเฟรช Sheets'}
+                    </button>
+
+                    <button 
                       onClick={syncAllToGoogleSheets} 
                       disabled={isSyncingAll}
-                      className="flex-1 sm:flex-initial bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      className="flex-1 sm:flex-initial bg-teal-600 hover:bg-teal-500 text-white px-3 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
-                      {isSyncingAll ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Sparkles size={14}/>}
-                      {isSyncingAll ? 'กำลังซิงค์...' : 'ซิงค์ประวัติทั้งหมด'}
+                      {isSyncingAll ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Upload size={14}/>}
+                      {isSyncingAll ? 'กำลังส่ง...' : 'ส่งข้อมูลทั้งหมด'}
                     </button>
                   </div>
                 </div>
 
-                {/* 🌟 2. สถานะออร์เดอร์ Real-time (Order Status Cards) */}
-                <div>
-                  <h3 className="font-bold text-sm text-primary mb-3 flex items-center gap-2">
-                    <BellRing size={16} className="text-orange-500"/> สถานะคิวออร์เดอร์ปัจจุบัน
-                  </h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div 
-                      onClick={() => setAdminTab('orders')}
-                      className="bg-orange-50 border-2 border-orange-200 p-4 rounded-[2rem] text-center cursor-pointer active:scale-95 transition-all shadow-sm hover:shadow-md"
-                    >
-                      <p className="text-[10px] font-bold text-orange-600 uppercase mb-1">รอยืนยัน 🟠</p>
-                      <h2 className="text-3xl font-bold text-orange-600">{pendingCount}</h2>
-                      <p className="text-[8px] text-orange-400 font-bold mt-1">ออร์เดอร์ใหม่</p>
+                {/* 2. การ์ดสรุปยอดขาย (Google Sheets Data Only) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-5 rounded-3xl shadow-xl relative overflow-hidden border border-emerald-500">
+                    <div className="absolute -right-2 -top-2 opacity-15"><Calendar size={100}/></div>
+                    <div className="flex justify-between items-center mb-2 relative z-10">
+                      <span className="font-bold text-xs flex items-center gap-1.5 text-emerald-100">
+                        <Sparkles size={16} className="text-amber-300"/> รายรับวันนี้ (Google Sheets)
+                      </span>
+                      <span className="text-[9px] bg-amber-400 text-emerald-950 font-black px-2.5 py-0.5 rounded-full shadow-xs">
+                        {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                      </span>
                     </div>
+                    <h1 className="text-3xl font-serif font-black relative z-10 my-1 text-white">
+                      ฿{(sheetStats?.todayRevenue || 0).toLocaleString()}
+                    </h1>
+                    <p className="text-[10px] text-emerald-100/80 font-medium relative z-10">
+                      สรุปรายรับที่คำนวณสดจากตาราง Google Sheets
+                    </p>
+                  </div>
 
-                    <div 
-                      onClick={() => setAdminTab('orders')}
-                      className="bg-blue-50 border-2 border-blue-200 p-4 rounded-[2rem] text-center cursor-pointer active:scale-95 transition-all shadow-sm hover:shadow-md"
-                    >
-                      <p className="text-[10px] font-bold text-blue-600 uppercase mb-1">กำลังปรุง 👩‍🍳</p>
-                      <h2 className="text-3xl font-bold text-blue-600">{cookingCount}</h2>
-                      <p className="text-[8px] text-blue-400 font-bold mt-1">กำลังทำเครื่องดื่ม</p>
+                  <div className="bg-emerald-900 text-white p-5 rounded-3xl shadow-xl relative overflow-hidden border border-emerald-800">
+                    <div className="absolute -right-4 -top-4 opacity-10"><TrendingUp size={120}/></div>
+                    <div className="flex justify-between items-center mb-2 opacity-80 relative z-10">
+                      <span className="font-bold text-xs flex items-center gap-1"><TrendingUp size={16}/> รายรับรวมสะสมทั้งหมด</span>
+                      <span className="text-[10px] bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-bold">ข้อมูลถาวร</span>
                     </div>
-
-                    <div 
-                      onClick={() => setAdminTab('orders')}
-                      className="bg-green-50 border-2 border-green-200 p-4 rounded-[2rem] text-center cursor-pointer active:scale-95 transition-all shadow-sm hover:shadow-md"
-                    >
-                      <p className="text-[10px] font-bold text-green-600 uppercase mb-1">สำเร็จแล้ว 🟢</p>
-                      <h2 className="text-3xl font-bold text-green-600">{completedCount}</h2>
-                      <p className="text-[8px] text-green-400 font-bold mt-1">จัดส่งเสร็จสิ้น</p>
-                    </div>
+                    <h1 className="text-3xl font-serif font-black relative z-10 my-1">฿{(sheetStats?.totalRevenue || 0).toLocaleString()}</h1>
+                    <p className="text-[10px] opacity-70 relative z-10">* ยอดขายนี้ดึงตรงจาก Google Sheets แม้ลบออร์เดอร์ในแอป ยอดจะไม่หาย</p>
                   </div>
                 </div>
 
-                {/* 🌟 3. การ์ดสรุปยอดขาย (Sales Summary Header) */}
-                <div className="bg-primary text-white p-6 rounded-[2.5rem] shadow-xl relative overflow-hidden">
-                  <div className="absolute -right-4 -top-4 opacity-10"><TrendingUp size={120}/></div>
-                  <div className="flex justify-between items-center mb-2 opacity-80 relative z-10">
-                    <span className="font-bold text-xs flex items-center gap-1"><TrendingUp size={16}/> ยอดขายวันนี้</span>
-                    <span className="text-[10px] bg-white/20 px-2.5 py-1 rounded-full font-bold">{new Date().toLocaleDateString('th-TH')}</span>
-                  </div>
-                  <h1 className="text-5xl font-serif font-bold relative z-10 my-2">฿{revData.daily.toLocaleString()}</h1>
-                  <div className="flex gap-4 mt-4 pt-4 border-t border-white/10 text-xs relative z-10">
-                    <div>
-                      <span className="opacity-70 text-[10px] block">เดือนนี้</span>
-                      <span className="font-bold text-base">฿{revData.monthly.toLocaleString()}</span>
-                    </div>
-                    <div className="border-l border-white/20 pl-4">
-                      <span className="opacity-70 text-[10px] block">ปีนี้</span>
-                      <span className="font-bold text-base">฿{revData.yearly.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 🌟 4. จำแนกช่องทางชำระเงิน (Payment Method Breakdown) */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-4">
-                  <h3 className="font-bold text-sm text-primary flex items-center gap-2">
-                    <Banknote size={16} className="text-emerald-600"/> สัดส่วนช่องทางชำระเงิน
+                {/* 3. จำแนกช่องทางชำระเงินจาก Google Sheets */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+                  <h3 className="font-bold text-xs text-slate-800 flex items-center gap-2">
+                    <Banknote size={16} className="text-emerald-600"/> สัดส่วนช่องทางชำระเงิน (ข้อมูลจาก Google Sheets)
                   </h3>
                   
                   <div className="space-y-3">
                     <div>
                       <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-gray-600 flex items-center gap-1"><CreditCard size={12}/> โอนพร้อมเพย์</span>
-                        <span className="text-primary">฿{promptPayTotal.toLocaleString()} ({Math.round((promptPayTotal/grandTotal)*100 || 0)}%)</span>
+                        <span className="text-slate-600 flex items-center gap-1"><CreditCard size={12}/> โอนพร้อมเพย์</span>
+                        <span className="text-slate-900">฿{(sheetStats?.promptPaySum || 0).toLocaleString()} ({Math.round(((sheetStats?.promptPaySum || 0) / (sheetStats?.grandTotal || 1)) * 100)}%)</span>
                       </div>
-                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-blue-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min((promptPayTotal/grandTotal)*100, 100)}%` }}></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-gray-600 flex items-center gap-1"><Banknote size={12}/> เงินสด</span>
-                        <span className="text-primary">฿{cashTotal.toLocaleString()} ({Math.round((cashTotal/grandTotal)*100 || 0)}%)</span>
-                      </div>
-                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min((cashTotal/grandTotal)*100, 100)}%` }}></div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(((sheetStats?.promptPaySum || 0) / (sheetStats?.grandTotal || 1)) * 100, 100)}%` }}></div>
                       </div>
                     </div>
 
                     <div>
                       <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-gray-600 flex items-center gap-1"><Sparkles size={12} className="text-orange-500"/> ไทยช่วยไทยพลัส</span>
-                        <span className="text-primary">฿{thaiChueiThaiTotal.toLocaleString()} ({Math.round((thaiChueiThaiTotal/grandTotal)*100 || 0)}%)</span>
+                        <span className="text-slate-600 flex items-center gap-1"><Banknote size={12}/> เงินสด</span>
+                        <span className="text-slate-900">฿{(sheetStats?.cashSum || 0).toLocaleString()} ({Math.round(((sheetStats?.cashSum || 0) / (sheetStats?.grandTotal || 1)) * 100)}%)</span>
                       </div>
-                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-orange-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min((thaiChueiThaiTotal/grandTotal)*100, 100)}%` }}></div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(((sheetStats?.cashSum || 0) / (sheetStats?.grandTotal || 1)) * 100, 100)}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-600 flex items-center gap-1"><Sparkles size={12} className="text-amber-500"/> ไทยช่วยไทยพลัส</span>
+                        <span className="text-slate-900">฿{(sheetStats?.thaiSum || 0).toLocaleString()} ({Math.round(((sheetStats?.thaiSum || 0) / (sheetStats?.grandTotal || 1)) * 100)}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-amber-500 h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(((sheetStats?.thaiSum || 0) / (sheetStats?.grandTotal || 1)) * 100, 100)}%` }}></div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* 🌟 5. สินค้าขายดี 5 อันดับแรก (Top 5 Best Sellers Leaderboard) */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                  <h3 className="font-bold text-sm text-primary mb-4 flex items-center gap-2">
-                    <Star size={16} className="text-amber-500" fill="currentColor"/> 5 อันดับเมนูขายดีที่สุด
-                  </h3>
-                  
-                  {topProducts.length > 0 ? (
-                    <div className="space-y-3.5">
-                      {topProducts.map((p, idx) => (
-                        <div key={p.name} className="space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-gray-700 flex items-center gap-2">
-                              <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold ${idx === 0 ? 'bg-amber-400 text-white' : idx === 1 ? 'bg-gray-300 text-gray-700' : idx === 2 ? 'bg-amber-700 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                {idx + 1}
-                              </span>
-                              {p.name}
-                            </span>
-                            <span className="font-bold text-primary">{p.qty} แก้ว <span className="text-gray-400 font-normal">(฿{p.revenue.toLocaleString()})</span></span>
-                          </div>
-                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-1000 ${idx === 0 ? 'bg-amber-500' : 'bg-accent'}`} 
-                              style={{ width: `${(p.qty / maxTopQty) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-center text-xs text-gray-400 py-6 font-bold">ยังไม่มีข้อมูลยอดขายเมนู</p>
-                  )}
-                </div>
+                {/* 4. ตารางแสดงประวัติออร์เดอร์ถาวรจาก Google Sheets */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
+                    <h3 className="font-bold text-xs text-slate-800 flex items-center gap-2">
+                      <ClipboardList size={16} className="text-blue-500"/> ประวัติการสั่งซื้อย้อนหลังถาวร ({filteredSheetOrders.length} / {sheetOrdersData?.length || 0} บิล)
+                    </h3>
+                    {(sheetFilterDay !== 'all' || sheetFilterMonth !== 'all' || sheetFilterYear !== 'all') && (
+                      <button 
+                        onClick={() => { setSheetFilterDay('all'); setSheetFilterMonth('all'); setSheetFilterYear('all'); }}
+                        className="text-[10px] text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold px-2.5 py-1 rounded-lg transition-all"
+                      >
+                        ล้างตัวกรอง
+                      </button>
+                    )}
+                  </div>
 
-                {/* 🌟 6. ช่วงเวลาขายดี (Peak Hours Analytics Bar Chart) */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                  <h3 className="font-bold text-sm text-primary mb-4 flex items-center gap-2">
-                    <Clock size={16} className="text-indigo-500"/> ช่วงเวลาที่มีการสั่งซื้อเยอะที่สุด (Peak Hours)
-                  </h3>
+                  <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                      <Filter size={14} className="text-amber-800" />
+                      <span>กรองข้อมูลตาม วัน / เดือน / ปี:</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 block mb-1">วัน</label>
+                        <select 
+                          value={sheetFilterDay} 
+                          onChange={e => setSheetFilterDay(e.target.value)}
+                          className="w-full p-2 rounded-xl text-xs bg-white border border-slate-200 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="all">ทุกวัน</option>
+                          {[...Array(31)].map((_, i) => (
+                            <option key={i + 1} value={(i + 1).toString()}>วันที่ {i + 1}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 block mb-1">เดือน</label>
+                        <select 
+                          value={sheetFilterMonth} 
+                          onChange={e => setSheetFilterMonth(e.target.value)}
+                          className="w-full p-2 rounded-xl text-xs bg-white border border-slate-200 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="all">ทุกเดือน</option>
+                          {THAI_MONTHS.map((m, idx) => (
+                            <option key={idx + 1} value={(idx + 1).toString()}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 block mb-1">ปี</label>
+                        <select 
+                          value={sheetFilterYear} 
+                          onChange={e => setSheetFilterYear(e.target.value)}
+                          className="w-full p-2 rounded-xl text-xs bg-white border border-slate-200 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="all">ทุกปี</option>
+                          {availableYears.map(y => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
                   
-                  <div className="flex items-end gap-2 h-32 pt-4 px-2">
-                    {Object.entries(peakHoursData).map(([slot, count]) => {
-                      const heightPercent = (count / maxPeakCount) * 100;
+                  <div className="space-y-2 max-h-72 overflow-y-auto hide-scrollbar">
+                    {filteredSheetOrders.slice().reverse().map((o, idx) => {
+                      const safeOrderId = o?.orderId ? String(o.orderId).slice(0, 6) : `ROW-${idx + 1}`;
+                      const safeLineName = o?.lineName || 'ไม่ระบุชื่อ';
+                      const safeTimestamp = o?.timestampStr || 'ไม่ระบุเวลา';
+                      const safePayment = o?.paymentMethod || 'ไม่ระบุ';
+                      const safeTotal = Number(o?.total || 0).toLocaleString();
+                      const safeStatus = o?.status || 'จัดส่งสำเร็จ';
+
                       return (
-                        <div key={slot} className="flex-1 flex flex-col items-center h-full justify-end gap-1 group">
-                          <span className="text-[9px] font-bold text-primary opacity-80">{count} บิล</span>
-                          <div className="w-full bg-indigo-50 rounded-t-xl overflow-hidden flex items-end h-20">
-                            <div 
-                              className="w-full bg-indigo-500 rounded-t-xl transition-all duration-700 group-hover:bg-indigo-600" 
-                              style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                            ></div>
+                        <div key={o?.orderId || idx} className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex justify-between items-center text-xs hover:bg-slate-100/80 transition-colors">
+                          <div>
+                            <span className="font-bold text-slate-800 block">#{safeOrderId} - {safeLineName}</span>
+                            <span className="text-[9px] text-slate-400 font-bold">{safeTimestamp} • {safePayment}</span>
                           </div>
-                          <span className="text-[8px] font-bold text-gray-400 tracking-tighter truncate w-full text-center">{slot}</span>
+                          <div className="text-right">
+                            <span className="font-extrabold text-emerald-600 block">฿{safeTotal}</span>
+                            <span className="text-[8px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">{safeStatus}</span>
+                          </div>
                         </div>
                       );
                     })}
+
+                    {filteredSheetOrders.length === 0 && (
+                      <p className="text-center text-xs text-slate-400 py-8 font-bold">ไม่พบข้อมูลประวัติสั่งซื้อตามเงื่อนไข วัน/เดือน/ปี ที่เลือก</p>
+                    )}
                   </div>
                 </div>
 
-                {/* 🌟 7. ผู้ใช้ออนไลน์ (Real-time Active Users) */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-green-100 shadow-sm">
-                   <div className="flex justify-between items-center mb-4 border-b border-gray-50 pb-3">
-                     <h3 className="font-bold text-sm text-green-600 flex items-center gap-2">
-                       <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span>
-                       ผู้ใช้ออนไลน์ขณะนี้ (Real-time)
-                     </h3>
-                     <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">{activeUsers.length} คน</span>
-                   </div>
-
-                   {activeUsers.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {activeUsers.map(u => (
-                           <div key={u.id} className="bg-green-50 text-green-700 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-green-200 flex items-center gap-1.5 shadow-sm">
-                             <UserCheck size={12}/> {u.displayName}
-                           </div>
-                        ))}
-                      </div>
-                   ) : (
-                      <p className="text-center text-xs text-gray-400 font-bold py-4">ยังไม่มีลูกค้าออนไลน์ในขณะนี้</p>
-                   )}
-                </div>
-
-                {/* 📊 สถิติผู้เข้าชม 7 วัน */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                   <h3 className="font-bold text-sm text-primary mb-4 flex items-center gap-2"><Users size={16}/> 📊 สถิติผู้เข้าชมเว็บย้อนหลัง 7 วัน</h3>
-                   <div className="space-y-3.5">
-                      {recentVisits.map((v, index) => {
-                         const percent = (v.count / maxVisitCount) * 100;
-                         const isToday = index === 6;
-                         return (
-                            <div key={v.dateStr} className="space-y-1">
-                               <div className="flex justify-between items-center text-xs">
-                                  <span className={`font-bold ${isToday ? 'text-accent' : 'text-gray-500'}`}>{v.thaiDateStr} {isToday && '(วันนี้)'}</span>
-                                  <span className="font-bold text-primary">{v.count} คน</span>
-                               </div>
-                               <div className="w-full bg-gray-50 rounded-full h-2.5 overflow-hidden border border-gray-100/50">
-                                  <div className={`h-full rounded-full transition-all duration-1000 ${isToday ? 'bg-accent' : 'bg-primary/70'}`} style={{ width: `${percent}%` }}></div>
-                               </div>
-                            </div>
-                         );
-                      })}
-                   </div>
-                </div>
-
-                {/* Storage Graph */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                   <div className="flex justify-between items-center mb-2">
-                     <h3 className="font-bold text-sm text-primary flex items-center gap-2"><Database size={16}/> พื้นที่เก็บรูปภาพ (Storage)</h3>
-                     <span className="text-[9px] font-bold text-gray-400 bg-gray-50 px-2 py-1 rounded-full border">ประมาณการ</span>
-                   </div>
-                   <p className="text-xs font-bold text-gray-500 mb-3">ใช้ไปประมาณ <span className="text-accent">{storageData.usageMB} MB</span> / 5,000 MB</p>
-                   <div className="w-full bg-gray-100 rounded-full h-3 mb-1 overflow-hidden shadow-inner">
-                     <div className={`h-3 rounded-full transition-all duration-1000 ${storageData.storagePercent > 80 ? 'bg-red-500' : storageData.storagePercent > 50 ? 'bg-orange-500' : 'bg-green-500'}`} style={{ width: `${Math.max(storageData.storagePercent, 1)}%` }}></div>
-                   </div>
-                </div>
-
-                {/* สรุปรายรับรายวัน */}
-                <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                   <h3 className="font-bold text-sm text-primary mb-4 border-b border-gray-50 pb-3 flex items-center gap-2"><Clock size={16}/> สรุปรายรับรายวัน (7 วันล่าสุด)</h3>
-                   <div className="space-y-3">
-                      {revData.dailyHistory.map((d, idx) => (
-                         <div key={idx} className="flex justify-between items-center text-sm">
-                            <span className={idx === 0 ? "font-bold text-accent" : "text-gray-500 font-bold"}>{idx === 0 ? `วันนี้ (${d.date})` : d.date}</span>
-                            <span className={`font-bold ${idx === 0 ? "text-accent" : "text-primary"}`}>฿{d.total.toLocaleString()}</span>
-                         </div>
-                      ))}
-                   </div>
-                </div>
-
-                {/* ปุ่มล้างออร์เดอร์ที่ซ่อนไว้ */}
-                <div className="bg-red-50 p-6 rounded-[2.5rem] border-2 border-dashed border-red-200 space-y-3">
-                   <h3 className="font-bold text-sm text-red-700 flex items-center gap-2"><Trash2 size={16}/> ล้างข้อมูลยอดขายถาวร</h3>
-                   <p className="text-[10px] text-gray-500 leading-relaxed font-semibold">เมื่อแอดมินสั่งลบออเดอร์ในหน้ารายการ ระบบจะทำการ "ซ่อน" เอาไว้เพื่อไม่ให้กระทบยอดรวมของ Dashboard หากต้องการล้างประวัติออเดอร์ที่ถูกซ่อนไว้ทิ้งอย่างถาวร ให้กดปุ่มด้านล่างนี้ได้เลยค่ะ</p>
-                   <button 
-                      onClick={() => {
-                         showConfirm("คุณต้องการลบข้อมูลออเดอร์ที่ถูกซ่อนไว้ทั้งหมดออกจากคลาวด์ถาวรใช่หรือไม่?", async () => {
-                            setIsLoading(true);
-                            try {
-                               const hiddenOrders = orders.filter(o => o.isDeleted);
-                               const promises = hiddenOrders.map(o => deleteDoc(doc(db, 'orders', o.id)));
-                               await Promise.all(promises);
-                               showAlert("ทำความสะอาดระบบและลบออเดอร์ที่ซ่อนถาวรเรียบร้อยค่ะ! ✨🐮");
-                            } catch (e) {
-                               showAlert("เกิดข้อผิดพลาดในการลบ: " + e.message);
-                            } finally {
-                               setIsLoading(false);
-                            }
-                         });
-                      }}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-4 rounded-2xl text-xs font-bold shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                   >
-                      <Trash2 size={14}/> ล้างข้อมูลออเดอร์ที่ถูกซ่อนทั้งหมดถาวร
-                   </button>
-                </div>
-
-                <div className="flex gap-2">
-                  <button onClick={exportToCSV} className="flex-1 bg-[#0F9D58] text-white py-5 rounded-[2rem] font-bold text-xs shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                    <Download size={16} /> Export รายรับ (CSV)
-                  </button>
-                  <button onClick={exportMenuToCSV} className="flex-1 bg-blue-600 text-white py-5 rounded-[2rem] font-bold text-xs shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                    <Download size={16} /> Export เมนู (CSV)
-                  </button>
-                </div>
               </div>
             )}
 
             {/* TAB: ตรวจสอบออร์เดอร์ของแอดมิน */}
             {adminTab === 'orders' && (
               <div className="space-y-4">
-                <div className="bg-gray-50 p-2 rounded-2xl border border-gray-100 relative mb-4">
-                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหารหัสบิล, ชื่อ หรือที่อยู่ลูกค้า..." className="w-full pl-10 pr-10 py-3 rounded-xl text-xs outline-none bg-white font-bold text-gray-600"/>
-                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1 rounded-full"><X size={12}/></button>}
+                <div className="bg-slate-50 p-2 rounded-2xl border border-slate-200/80 relative mb-4">
+                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหารหัสบิล, ชื่อ หรือที่อยู่ลูกค้า..." className="w-full pl-10 pr-10 py-2.5 rounded-xl text-xs outline-none bg-white font-bold text-slate-700"/>
+                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 bg-slate-100 p-1 rounded-full"><X size={12}/></button>}
                 </div>
 
                 {filteredOrders.map((o, idx) => {
                     const dateStr = new Date(o.timestamp).toLocaleString('th-TH');
                     return (
-                    <div key={o.id} className={`border p-5 rounded-3xl shadow-sm bg-white animate-in fade-in transition-all duration-500 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : o.status === 'pending' ? 'border-orange-300 bg-orange-50/30' : 'border-gray-100'}`}>
+                    <div key={o.id} className={`border p-5 rounded-3xl shadow-xs bg-white animate-in fade-in transition-all duration-300 ${selectedOrderId === o.id ? 'order-highlight bg-amber-50/20' : o.status === 'pending' ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200/80'}`}>
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
-                           <span className="bg-primary text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-bold">#{filteredOrders.length - idx}</span>
+                           <span className="bg-slate-900 text-white w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-black">#{filteredOrders.length - idx}</span>
                            <div>
-                              <span className="font-bold text-sm text-primary">{o.lineName}</span>
-                              <p className="text-[9px] text-gray-400 font-bold"><Clock size={10} className="inline mr-1"/>{dateStr}</p>
+                              <span className="font-bold text-xs text-slate-800">{o.lineName}</span>
+                              <p className="text-[9px] text-slate-400 font-bold"><Clock size={10} className="inline mr-1"/>{dateStr}</p>
                            </div>
                         </div>
                         <div className="text-right">
-                          <span className="text-orange-600 font-bold block">฿{o.total}</span>
-                          <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">
+                          <span className="text-amber-800 font-black text-sm block">฿{o.total}</span>
+                          <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-tight">
                             {o.paymentMethod === 'cash' ? '💵 จ่ายสด' : (o.paymentMethod === 'thaichueithai' ? '🇹🇭 ไทยช่วยไทยพลัส' : '📱 โอนเงิน')}
                           </span>
                         </div>
                       </div>
-                      <div className="text-[10px] text-gray-500 mb-3 flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100"><MapPin size={12} className="flex-shrink-0 text-accent"/> {o.address}</div>
                       
-                      <div className="space-y-1 border-t border-gray-100 pt-3 mb-3">{(o.items || []).map((i, idx) => (
-                          <div key={idx} className="text-xs text-gray-600 flex justify-between font-medium">
+                      <div className="text-[10px] text-slate-600 mb-3 flex items-center gap-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 font-medium"><MapPin size={12} className="flex-shrink-0 text-amber-800"/> {o.address}</div>
+                      
+                      <div className="space-y-1 border-t border-slate-100 pt-3 mb-3">{(o.items || []).map((i, idx) => (
+                          <div key={idx} className="text-xs text-slate-600 flex justify-between font-medium">
                             <span>{i.qty}x {i.name} ({getBlendText(i)}{isWhipOrCreamCheeseItem(i) ? '' : ` • หวาน ${i.sweetness}`}{i.bean ? ` • ${i.bean}` : ''}{i.teaType ? ` • ${i.teaType}` : ''}{i.addShot ? ' • เพิ่มช็อต' : ''}{i.separateIce ? ' • แยกน้ำแข็ง' : ''}{i.hasFreePearl && i.addPearl ? ' +มุกฟรี':''}{i.selectedSauces?.length > 0 ? ` + ราดซอส:${i.selectedSauces.map(s=>typeof s==='object'?s.name:s).join(',')}` : ''}{i.selectedToppings?.length > 0 ? ` + ${i.selectedToppings.map(t=>t.name).join(',')}` : ''})</span>
-                            <span className="font-bold">฿{i.price * i.qty}</span>
+                            <span className="font-bold text-slate-800">฿{i.price * i.qty}</span>
                           </div>
                       ))}</div>
 
                       {(o.hasSlip || o.hasDeliveryImage) && (
-                        <div className="flex flex-wrap gap-3 mb-3">
+                        <div className="flex flex-wrap gap-2 mb-3">
                           {o.hasSlip && (
-                            <div className="bg-gray-50 p-2.5 rounded-2xl border border-gray-100 flex-1 min-w-[120px] max-w-[180px] text-center">
-                              <p className="text-[9px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">📄 สลิปโอนเงิน:</p>
+                            <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/60 flex-1 min-w-[120px] text-center">
+                              <p className="text-[8px] font-bold text-slate-400 mb-1 uppercase tracking-wider">📄 สลิปโอนเงิน:</p>
                               <button 
                                 onClick={() => viewImage(o.id, 'slip')}
                                 disabled={loadingSlipId === o.id}
-                                className="w-full bg-white hover:bg-gray-100 transition-colors py-3 rounded-xl border text-[10px] font-bold text-blue-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                className="w-full bg-white hover:bg-slate-100 transition-colors py-2 rounded-lg border text-[10px] font-bold text-blue-600 flex items-center justify-center gap-1 shadow-2xs"
                               >
                                 {loadingSlipId === o.id ? (
-                                  <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                  <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                                 ) : <Eye size={12}/>}
                                 ตรวจสอบสลิป
                               </button>
                             </div>
                           )}
                           {o.hasDeliveryImage && (
-                            <div className="bg-gray-50 p-2.5 rounded-2xl border border-gray-100 flex-1 min-w-[120px] max-w-[180px] text-center">
-                              <p className="text-[9px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">🛵 รูปส่งสินค้า:</p>
+                            <div className="bg-slate-50 p-2 rounded-xl border border-slate-200/60 flex-1 min-w-[120px] text-center">
+                              <p className="text-[8px] font-bold text-slate-400 mb-1 uppercase tracking-wider">🛵 รูปส่งสินค้า:</p>
                               <button 
                                 onClick={() => viewImage(o.id, 'delivery')}
                                 disabled={loadingSlipId === o.id}
-                                className="w-full bg-white hover:bg-gray-100 transition-colors py-3 rounded-xl border text-[10px] font-bold text-green-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                className="w-full bg-white hover:bg-slate-100 transition-colors py-2 rounded-lg border text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 shadow-2xs"
                               >
                                 {loadingSlipId === o.id ? (
-                                  <div className="w-3.5 h-3.5 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                                  <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
                                 ) : <Camera size={12}/>}
                                 ดูรูปจัดส่ง
                               </button>
@@ -1843,9 +1985,18 @@ export default function App() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-2 mb-2 mt-4">
-                        {o.hasSlip && <button onClick={() => viewImage(o.id, 'slip')} className="bg-blue-50 text-blue-600 py-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all border border-blue-100"><Eye size={14}/> ตรวจสลิป</button>}
+                      <div className="grid grid-cols-3 gap-2 mb-2 mt-3">
+                        {o.hasSlip ? (
+                          <button onClick={() => viewImage(o.id, 'slip')} className="bg-blue-50 text-blue-700 py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all border border-blue-200/60"><Eye size={13}/> ตรวจสลิป</button>
+                        ) : <div className="hidden sm:block"></div>}
                         
+                        <button 
+                          onClick={() => handleShareOrderBill(o)}
+                          className="bg-emerald-50 text-emerald-700 py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all border border-emerald-200 hover:bg-emerald-100"
+                        >
+                          <Share2 size={13}/> แชร์บิล
+                        </button>
+
                         <button 
                           type="button" 
                           onClick={() => {
@@ -1857,75 +2008,73 @@ export default function App() {
                                 }
                              });
                           }} 
-                          className="bg-red-50 text-red-500 py-3 rounded-xl flex items-center justify-center active:scale-95 transition-all border border-red-100"
+                          className="bg-rose-50 text-rose-600 py-2.5 rounded-xl flex items-center justify-center active:scale-95 transition-all border border-rose-200/60"
                         >
-                           <Trash2 size={16}/>
+                           <Trash2 size={15}/>
                         </button>
                       </div>
 
-                      <div className="flex gap-2 border-t border-gray-100 pt-3 mt-2">
-                        {o.status === 'pending' && <button onClick={() => handleAcceptOrder(o)} className="flex-1 bg-orange-400 text-white py-4 rounded-xl text-[11px] font-bold shadow-lg animate-pulse active:scale-95 transition-all">กดยอมรับออเดอร์</button>}
+                      <div className="flex gap-2 border-t border-slate-100 pt-3 mt-2">
+                        {o.status === 'pending' && <button onClick={() => handleAcceptOrder(o)} className="flex-1 bg-amber-600 text-white py-3.5 rounded-xl text-[11px] font-bold shadow-md animate-pulse active:scale-97 transition-all">กดยอมรับออเดอร์</button>}
                         
                         {o.status === 'cooking' && (
-                          <button onClick={() => { setDeliveryModal(o); setDeliveryImage(''); setDeliveryLocation('room'); }} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-95 transition-all">
+                          <button onClick={() => { setDeliveryModal(o); setDeliveryImage(''); setDeliveryLocation('room'); }} className="flex-1 bg-emerald-600 text-white py-3.5 rounded-xl text-[11px] font-bold shadow-md flex items-center justify-center gap-1 active:scale-97 transition-all">
                              <Check size={14}/> จัดส่ง/ลูกค้ารับแล้ว
                           </button>
                         )}
                         
-                        {o.status === 'completed' && <div className="flex-1 text-center text-[10px] font-bold text-green-600 py-2 border border-green-200 rounded-xl bg-green-50">สำเร็จเรียบร้อย</div>}
+                        {o.status === 'completed' && <div className="flex-1 text-center text-[10px] font-bold text-emerald-700 py-2 border border-emerald-200 rounded-xl bg-emerald-50">สำเร็จเรียบร้อย</div>}
                       </div>
                     </div>
                 )})}
-                {filteredOrders.length === 0 && <div className="py-20 text-center text-gray-400 font-bold opacity-50">ไม่พบข้อมูลออร์เดอร์ 🐮</div>}
+                {filteredOrders.length === 0 && <div className="py-20 text-center text-slate-400 font-bold text-xs opacity-60">ไม่พบข้อมูลออร์เดอร์ 🐮</div>}
               </div>
             )}
 
-            {/* TAB: ระบบจัดการคลังเมนูของร้าน */}
+            {/* TAB: ระบบจัดการคลังเมนู */}
             {adminTab === 'menus' && (
-              <div className="space-y-8 animate-in fade-in">
-                
-                <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col items-center text-center">
-                  <div className="bg-blue-50 p-4 rounded-full text-blue-500 mb-3 border border-blue-100">
-                     <ClipboardList size={28} />
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col items-center text-center">
+                  <div className="bg-blue-50 p-3.5 rounded-2xl text-blue-600 mb-2.5 border border-blue-100">
+                     <ClipboardList size={24} />
                   </div>
-                  <h3 className="font-bold text-sm text-primary mb-1">ส่งออกรายการเมนู (Excel/CSV)</h3>
-                  <p className="text-[10px] text-gray-500 mb-5 leading-relaxed">
-                     ดาวน์โหลดรายชื่อเครื่องดื่ม ราคา และสถานะทั้งหมด ออกเป็นไฟล์ตาราง
+                  <h3 className="font-bold text-xs text-slate-800 mb-0.5">ส่งออกรายการเมนู (CSV)</h3>
+                  <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">
+                     ดาวน์โหลดรายชื่อเครื่องดื่ม ราคา และสถานะทั้งหมด
                   </p>
-                  <button onClick={exportMenuToCSV} className="w-full bg-blue-500 text-white py-4 rounded-2xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-blue-600">
-                     <Download size={18} /> โหลดรายการเมนูลงเครื่อง
+                  <button onClick={exportMenuToCSV} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl font-bold text-xs shadow-md active:scale-97 transition-all flex items-center justify-center gap-2">
+                     <Download size={16} /> โหลดรายการเมนูลงเครื่อง
                   </button>
                 </div>
 
-                <div className="bg-white p-2 rounded-3xl shadow-sm border border-gray-100 relative">
-                   <Search size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" />
-                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหาชื่อเมนู เพื่อแก้ไข..." className="w-full pl-12 pr-10 py-4 rounded-2xl text-sm outline-none bg-white focus:ring-2 focus:ring-[var(--theme-accent)] transition-all font-bold"/>
-                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 bg-gray-100 p-1.5 rounded-full hover:bg-gray-200"><X size={14}/></button>}
+                <div className="bg-white p-2 rounded-2xl shadow-xs border border-slate-200/80 relative">
+                   <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                   <input type="text" value={adminSearchQuery} onChange={e => setAdminSearchQuery(e.target.value)} placeholder="ค้นหาชื่อเมนู..." className="w-full pl-11 pr-10 py-3 rounded-xl text-xs outline-none bg-white font-bold text-slate-700"/>
+                   {adminSearchQuery && <button onClick={() => setAdminSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 bg-slate-100 p-1 rounded-full"><X size={12}/></button>}
                 </div>
 
-                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 shadow-inner relative">
+                <div className="bg-slate-50/80 p-5 rounded-3xl border-2 border-dashed border-slate-200 shadow-inner relative">
                   {!showAddMenuForm ? (
-                     <button onClick={() => setShowAddMenuForm(true)} className="w-full py-2 text-accent font-bold flex items-center justify-center gap-2 hover:bg-gray-100 rounded-2xl transition-all">
-                        <Plus size={18}/> คลิกเพื่อเพิ่มเมนูใหม่
+                     <button onClick={() => setShowAddMenuForm(true)} className="w-full py-2 text-amber-800 font-bold text-xs flex items-center justify-center gap-2 hover:bg-slate-100 rounded-xl transition-all">
+                        <Plus size={16}/> คลิกเพื่อเพิ่มเมนูใหม่
                      </button>
                   ) : (
-                    <div className="space-y-4 text-center animate-in fade-in slide-in-from-top-2">
-                      <div className="flex justify-between items-center border-b border-gray-200 pb-3 mb-2">
-                        <h3 className="font-bold text-sm text-accent uppercase tracking-widest flex items-center gap-2"><Plus size={16}/> เพิ่มเมนูใหม่</h3>
-                        <button onClick={() => setShowAddMenuForm(false)} className="text-gray-400 p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={16}/></button>
+                    <div className="space-y-3.5 text-center animate-in fade-in">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2.5 mb-1">
+                        <h3 className="font-bold text-xs text-amber-900 uppercase tracking-wider flex items-center gap-1.5"><Plus size={15}/> เพิ่มเมนูใหม่</h3>
+                        <button onClick={() => setShowAddMenuForm(false)} className="text-slate-400 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={15}/></button>
                       </div>
-                      <input type="text" placeholder="ชื่อเมนู" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent bg-white font-bold" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
+                      <input type="text" placeholder="ชื่อเมนู" className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-slate-200 bg-white font-bold" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} />
                       
                       <div className="flex gap-2">
-                        <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent bg-white font-bold" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
-                        
-                        <select className="w-1/2 p-4 rounded-2xl text-sm outline-none shadow-sm bg-white focus:ring-2 focus:ring-[var(--theme-accent)] border border-transparent font-bold text-gray-600" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
+                        <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-slate-200 bg-white font-bold" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} />
+                        <select className="w-1/2 p-3.5 rounded-2xl text-xs outline-none shadow-2xs bg-white border border-slate-200 font-bold text-slate-700" value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})}>
                           {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
 
-                      <div className="p-3 bg-white rounded-2xl border border-gray-100 text-left">
-                        <label className="text-[11px] font-bold text-gray-500 block mb-2">ระดับความหวานที่เลือกได้:</label>
+                      <div className="p-3 bg-white rounded-2xl border border-slate-200 text-left">
+                        <label className="text-[10px] font-bold text-slate-500 block mb-2">ระดับความหวานที่เลือกได้:</label>
                         <div className="flex flex-wrap gap-1.5">
                           {SWEETNESS.map(level => {
                             const isSelected = (newMenu.allowedSweetness || SWEETNESS).includes(level);
@@ -1940,8 +2089,8 @@ export default function App() {
                                     : [...current, level];
                                   setNewMenu({ ...newMenu, allowedSweetness: updated });
                                 }}
-                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
-                                  isSelected ? 'bg-primary text-white border-primary shadow-sm' : 'bg-gray-50 text-gray-400 border-gray-100'
+                                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
+                                  isSelected ? 'bg-slate-900 text-white border-slate-900 shadow-2xs' : 'bg-slate-50 text-slate-400 border-slate-200'
                                 }`}
                               >
                                 {level}
@@ -1951,146 +2100,146 @@ export default function App() {
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                        <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-blue-50 rounded-2xl shadow-sm border border-blue-100 cursor-pointer transition-all hover:bg-blue-100">
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-blue-50/80 rounded-2xl border border-blue-200/80 cursor-pointer transition-all">
                           <input type="checkbox" checked={newMenu.isOnlyBlend} onChange={e => setNewMenu({...newMenu, isOnlyBlend: e.target.checked, allowBlend: e.target.checked ? true : newMenu.allowBlend})} className="w-4 h-4 accent-blue-600 cursor-pointer" />
-                          <span className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><Zap size={14} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น (เช่น สมูทตี้)</span>
+                          <span className="text-[10px] font-bold text-blue-700 flex items-center gap-1"><Zap size={13} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น (เช่น สมูทตี้)</span>
                         </label>
 
-                        <label className={`flex items-center justify-center gap-1 p-3 rounded-2xl shadow-sm border cursor-pointer transition-all ${newMenu.isOnlyBlend ? 'bg-gray-100 border-gray-200 opacity-50' : 'bg-white border-blue-50 hover:bg-blue-50'}`}>
-                          <input type="checkbox" disabled={newMenu.isOnlyBlend} checked={newMenu.isOnlyBlend || newMenu.allowBlend !== false} onChange={e => setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-400 cursor-pointer" />
-                          <span className="text-[10px] font-bold text-gray-500">มีเมนูปั่น</span>
+                        <label className={`flex items-center justify-center gap-1 p-2.5 rounded-2xl border cursor-pointer transition-all ${newMenu.isOnlyBlend ? 'bg-slate-100 border-slate-200 opacity-50' : 'bg-white border-slate-200'}`}>
+                          <input type="checkbox" disabled={newMenu.isOnlyBlend} checked={newMenu.isOnlyBlend || newMenu.allowBlend !== false} onChange={e => setNewMenu({...newMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                          <span className="text-[10px] font-bold text-slate-600">มีเมนูปั่น</span>
                         </label>
 
-                        <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-gray-50 cursor-pointer transition-all hover:bg-gray-50">
-                          <input type="checkbox" checked={newMenu.allowTopping !== false} onChange={e => setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-[#A67C52] cursor-pointer" />
-                          <span className="text-[10px] font-bold text-gray-500">ท็อปปิ้งได้</span>
+                        <label className="flex items-center justify-center gap-1 p-2.5 bg-white rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                          <input type="checkbox" checked={newMenu.allowTopping !== false} onChange={e => setNewMenu({...newMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-amber-700 cursor-pointer" />
+                          <span className="text-[10px] font-bold text-slate-600">ท็อปปิ้งได้</span>
                         </label>
 
-                        <label className="flex items-center justify-center gap-1 p-3 bg-white rounded-2xl shadow-sm border border-orange-50 cursor-pointer transition-all hover:bg-orange-50">
-                          <input type="checkbox" checked={newMenu.hasFreePearl} onChange={e => setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-orange-400 cursor-pointer" />
-                          <span className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Star size={12} className="text-orange-400" fill="currentColor"/> มุกฟรี</span>
+                        <label className="flex items-center justify-center gap-1 p-2.5 bg-white rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                          <input type="checkbox" checked={newMenu.hasFreePearl} onChange={e => setNewMenu({...newMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-amber-500 cursor-pointer" />
+                          <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1"><Star size={11} className="text-amber-500" fill="currentColor"/> มุกฟรี</span>
                         </label>
 
-                        <label className="flex items-center justify-center gap-1 p-3 bg-gray-100 rounded-2xl shadow-sm border border-gray-200 cursor-pointer transition-all hover:bg-gray-200">
-                          <input type="checkbox" checked={newMenu.isSoldOut} onChange={e => setNewMenu({...newMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-gray-600 cursor-pointer" />
-                          <span className="text-[10px] font-bold text-gray-600 flex items-center gap-1">ปิดขายชั่วคราว</span>
+                        <label className="flex items-center justify-center gap-1 p-2.5 bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                          <input type="checkbox" checked={newMenu.isSoldOut} onChange={e => setNewMenu({...newMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-slate-600 cursor-pointer" />
+                          <span className="text-[10px] font-bold text-slate-600">ปิดขายชั่วคราว</span>
                         </label>
 
-                        <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-red-50 rounded-2xl shadow-sm border border-red-100 cursor-pointer transition-all hover:bg-red-100">
-                          <input type="checkbox" checked={newMenu.isPromoted} onChange={e => setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-red-500 cursor-pointer" />
-                          <span className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Star size={14} className="text-red-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ</span>
+                        <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-rose-50/80 rounded-2xl border border-rose-200/80 cursor-pointer transition-all">
+                          <input type="checkbox" checked={newMenu.isPromoted} onChange={e => setNewMenu({...newMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-rose-600 cursor-pointer" />
+                          <span className="text-[10px] font-bold text-rose-700 flex items-center gap-1"><Star size={13} className="text-rose-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ</span>
                         </label>
 
                         {newMenu.category === 'มัทฉะ' && (
-                          <label className="col-span-2 flex items-center justify-center gap-1 p-3 bg-green-50 rounded-2xl shadow-sm border border-green-100 cursor-pointer transition-all hover:bg-green-100">
-                            <input type="checkbox" checked={newMenu.hasTeaType} onChange={e => setNewMenu({...newMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-green-600 cursor-pointer" />
-                            <span className="text-[11px] font-bold text-green-700 flex items-center gap-1">🍵 ให้ลูกค้าเลือกผงชาได้</span>
+                          <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 cursor-pointer transition-all">
+                            <input type="checkbox" checked={newMenu.hasTeaType} onChange={e => setNewMenu({...newMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-emerald-600 cursor-pointer" />
+                            <span className="text-[10px] font-bold text-emerald-800">🍵 ให้ลูกค้าเลือกผงชาได้</span>
                           </label>
                         )}
                       </div>
 
                       {newMenu.allowBlend !== false && newMenu.category !== 'สมูทตี้โยเกิร์ต' && newMenu.category !== 'ผลไม้และสมูทตี้' && (
-                        <div className="text-left mt-2">
-                          <label className="text-[10px] font-bold text-gray-400 ml-2">บวกราคาเพิ่มสำหรับเมนูปั่น (บาท)</label>
-                          <input type="number" placeholder="เช่น 5 หรือ 10" className="w-full mt-1 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-[var(--theme-accent)] transition-all bg-white border border-transparent font-bold" value={newMenu.blendPrice} onChange={e => setNewMenu({...newMenu, blendPrice: e.target.value})} />
+                        <div className="text-left mt-1">
+                          <label className="text-[10px] font-bold text-slate-400 ml-1">บวกราคาเพิ่มสำหรับปั่น (บาท)</label>
+                          <input type="number" placeholder="เช่น 5" className="w-full mt-1 p-3.5 rounded-2xl text-xs outline-none shadow-2xs bg-white border border-slate-200 font-bold" value={newMenu.blendPrice} onChange={e => setNewMenu({...newMenu, blendPrice: e.target.value})} />
                         </div>
                       )}
 
-                      <label className="cursor-pointer bg-white border border-gray-200 p-4 rounded-2xl text-xs font-bold block shadow-sm text-gray-400 hover:text-accent hover:border-accent transition-all mt-4">
-                        <Upload size={18} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปเมนู' : 'อัปโหลดรูปภาพเมนู'}
+                      <label className="cursor-pointer bg-white border border-slate-200 p-3.5 rounded-2xl text-xs font-bold block shadow-2xs text-slate-400 hover:text-amber-800 transition-all mt-2">
+                        <Upload size={16} className="inline mr-2"/> {newMenu.image ? 'เปลี่ยนรูปภาพ' : 'อัปโหลดรูปภาพเมนู'}
                         <input type="file" accept="image/*" className="hidden" onChange={async e => {
                           const file = e.target.files[0];
                           if (file) { try { setNewMenu({...newMenu, image: await compressImage(file)}); } catch(err) { console.error(err); } }
                         }} />
                       </label>
-                      <button onClick={handleAddNewMenu} className="w-full bg-accent text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-[#8e6843]"><Plus size={18}/> บันทึกเมนูใหม่</button>
+                      
+                      <button onClick={handleAddNewMenu} className="w-full bg-amber-800 text-white py-3.5 rounded-2xl font-bold text-xs shadow-md active:scale-97 transition-all flex items-center justify-center gap-2 hover:bg-amber-900"><Plus size={16}/> บันทึกเมนูใหม่</button>
                     </div>
                   )}
                 </div>
 
-                {/* บริหารจัดการซอสราดแต่งหน้า */}
-                <div className="bg-amber-50 p-6 rounded-[2.5rem] border-2 border-dashed border-amber-200 shadow-inner relative mt-8">
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold text-sm text-amber-900 uppercase tracking-widest flex items-center justify-center gap-2">
-                      ✨ บริหารจัดการซอสราดแต่งหน้า (สำหรับวิปครีม/ครีมชีส)
+                <div className="bg-amber-50/80 p-5 rounded-3xl border-2 border-dashed border-amber-200/80 shadow-inner relative">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-bold text-xs text-amber-900 uppercase tracking-wider">
+                      ✨ ซอสราดแต่งหน้า (สำหรับวิปครีม/ครีมชีส)
                     </h3>
                   </div>
 
                   {!showAddSauceForm ? (
                      <div className="space-y-2">
-                       <button onClick={() => setShowAddSauceForm(true)} className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 text-xs">
-                          <Plus size={18}/> เพิ่มซอสราดแต่งหน้าใหม่เข้าสู่ระบบ
+                       <button onClick={() => setShowAddSauceForm(true)} className="w-full py-3 bg-amber-700 hover:bg-amber-800 text-white font-bold rounded-2xl transition-all shadow-xs flex items-center justify-center gap-2 text-xs">
+                          <Plus size={16}/> เพิ่มซอสราดใหม่
                        </button>
                        {sauces.length === 0 && (
-                         <button onClick={handleSeedDefaultSauces} className="w-full py-2.5 bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold rounded-xl transition-all text-xs border border-amber-300 flex items-center justify-center gap-2">
-                            ⚡ นำเข้าซอสเริ่มต้น (ช็อกโกแลต, คาราเมล ฯลฯ)
+                         <button onClick={handleSeedDefaultSauces} className="w-full py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-xl transition-all text-xs border border-amber-300 flex items-center justify-center gap-2">
+                            ⚡ นำเข้าซอสเริ่มต้น
                          </button>
                        )}
                      </div>
                   ) : (
-                    <div className="space-y-4 text-center animate-in fade-in slide-in-from-top-2 bg-white p-4 rounded-2xl border border-amber-200 shadow-sm">
-                      <div className="flex justify-between items-center border-b border-amber-100 pb-3 mb-2">
-                        <h3 className="font-bold text-sm text-amber-800 uppercase tracking-widest flex items-center gap-2"><Plus size={16}/> เพิ่มซอสราดแต่งหน้าใหม่</h3>
-                        <button onClick={() => setShowAddSauceForm(false)} className="text-amber-400 p-1 hover:bg-amber-100 rounded-full transition-colors"><X size={16}/></button>
+                    <div className="space-y-3 text-center animate-in fade-in bg-white p-4 rounded-2xl border border-amber-200 shadow-xs">
+                      <div className="flex justify-between items-center border-b border-amber-100 pb-2 mb-1">
+                        <h3 className="font-bold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5"><Plus size={15}/> เพิ่มซอสราดใหม่</h3>
+                        <button onClick={() => setShowAddSauceForm(false)} className="text-amber-400 p-1 hover:bg-amber-100 rounded-full transition-colors"><X size={15}/></button>
                       </div>
                       <div className="flex gap-2">
-                        <input type="text" placeholder="ชื่อซอส" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-amber-500 border border-amber-100 bg-gray-50 font-bold" value={newSauce.name} onChange={e => setNewSauce({...newSauce, name: e.target.value})} />
-                        <input type="number" placeholder="ราคา (+฿)" className="w-1/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-amber-500 border border-amber-100 bg-gray-50 font-bold" value={newSauce.price} onChange={e => setNewSauce({...newSauce, price: e.target.value})} />
+                        <input type="text" placeholder="ชื่อซอส" className="w-2/3 p-3.5 rounded-2xl text-xs outline-none border border-amber-200 bg-slate-50 font-bold" value={newSauce.name} onChange={e => setNewSauce({...newSauce, name: e.target.value})} />
+                        <input type="number" placeholder="ราคา" className="w-1/3 p-3.5 rounded-2xl text-xs outline-none border border-amber-200 bg-slate-50 font-bold" value={newSauce.price} onChange={e => setNewSauce({...newSauce, price: e.target.value})} />
                       </div>
                       <div className="flex gap-2">
-                         <button onClick={() => setShowAddSauceForm(false)} className="w-1/3 bg-gray-100 text-gray-500 py-3 rounded-2xl font-bold text-xs">ยกเลิก</button>
-                         <button onClick={handleAddSauce} className="w-2/3 bg-amber-600 text-white py-3 rounded-2xl font-bold text-xs shadow-lg active:scale-95 transition-all hover:bg-amber-700">บันทึกซอสราดใหม่</button>
+                         <button onClick={() => setShowAddSauceForm(false)} className="w-1/3 bg-slate-100 text-slate-500 py-2.5 rounded-xl font-bold text-xs">ยกเลิก</button>
+                         <button onClick={handleAddSauce} className="w-2/3 bg-amber-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md active:scale-97 transition-all">บันทึกซอสราด</button>
                       </div>
                     </div>
                   )}
 
-                  <div className="space-y-2 mt-4 text-left pt-4 border-t border-amber-200/50">
-                    <p className="text-xs font-bold text-amber-900 mb-2 flex justify-between items-center">
-                      <span>รายการซอสราดที่มีในระบบ ({sauces.length} รายการ)</span>
+                  <div className="space-y-2 mt-3 text-left pt-3 border-t border-amber-200/50">
+                    <p className="text-[11px] font-bold text-amber-900 mb-1">
+                      รายการซอสที่มี ({sauces.length} รายการ)
                     </p>
                     {sauces.map(s => (
-                      <div key={s.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-amber-100 shadow-sm">
-                        <span className="text-sm font-bold text-primary">{s.name} <span className="text-amber-600 text-xs font-bold">({s.price > 0 ? `+฿${s.price}` : 'ฟรี'})</span></span>
-                        <button onClick={() => handleDeleteSauce(s.id)} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"><Trash2 size={16}/></button>
+                      <div key={s.id} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-amber-200/60 shadow-2xs">
+                        <span className="text-xs font-bold text-slate-800">{s.name} <span className="text-amber-700 text-[10px] font-bold">({s.price > 0 ? `+฿${s.price}` : 'ฟรี'})</span></span>
+                        <button onClick={() => handleDeleteSauce(s.id)} className="text-rose-400 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={15}/></button>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 shadow-inner relative mt-8">
+                <div className="bg-amber-50/80 p-5 rounded-3xl border-2 border-dashed border-amber-200/80 shadow-inner relative">
                   {!showAddToppingForm ? (
-                     <button onClick={() => setShowAddToppingForm(true)} className="w-full py-2 text-orange-600 font-bold flex items-center justify-center gap-2 hover:bg-orange-100 rounded-2xl transition-all">
-                        <Plus size={18}/> คลิกเพื่อเพิ่มท็อปปิ้งเสริม
+                     <button onClick={() => setShowAddToppingForm(true)} className="w-full py-2 text-amber-800 font-bold text-xs flex items-center justify-center gap-2 hover:bg-amber-100 rounded-xl transition-all">
+                        <Plus size={16}/> คลิกเพื่อเพิ่มท็อปปิ้งเสริม
                      </button>
                   ) : (
-                    <div className="space-y-4 text-center animate-in fade-in slide-in-from-top-2">
-                      <div className="flex justify-between items-center border-b border-orange-200 pb-3 mb-2">
-                        <h3 className="font-bold text-sm text-orange-600 uppercase tracking-widest flex items-center gap-2"><Plus size={16}/> เพิ่มท็อปปิ้งเสริม</h3>
-                        <button onClick={() => setShowAddToppingForm(false)} className="text-orange-400 p-1 hover:bg-orange-200 rounded-full transition-colors"><X size={16}/></button>
+                    <div className="space-y-3 text-center animate-in fade-in">
+                      <div className="flex justify-between items-center border-b border-amber-200 pb-2 mb-1">
+                        <h3 className="font-bold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5"><Plus size={15}/> เพิ่มท็อปปิ้งเสริม</h3>
+                        <button onClick={() => setShowAddToppingForm(false)} className="text-amber-400 p-1 hover:bg-amber-100 rounded-full transition-colors"><X size={15}/></button>
                       </div>
                       <div className="flex gap-2">
-                        <input type="text" placeholder="ชื่อท็อปปิ้ง" className="w-2/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white font-bold" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
-                        <input type="number" placeholder="ราคา" className="w-1/3 p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-orange-400 border border-transparent bg-white font-bold" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
+                        <input type="text" placeholder="ชื่อท็อปปิ้ง" className="w-2/3 p-3.5 rounded-2xl text-xs outline-none border border-amber-200 bg-white font-bold" value={newTopping.name} onChange={e => setNewTopping({...newTopping, name: e.target.value})} />
+                        <input type="number" placeholder="ราคา" className="w-1/3 p-3.5 rounded-2xl text-xs outline-none border border-amber-200 bg-white font-bold" value={newTopping.price} onChange={e => setNewTopping({...newTopping, price: e.target.value})} />
                       </div>
-                      <button onClick={handleAddTopping} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all hover:bg-orange-600">บันทึกท็อปปิ้งใหม่</button>
+                      <button onClick={handleAddTopping} className="w-full bg-amber-700 text-white py-3 rounded-2xl font-bold text-xs shadow-md active:scale-97 transition-all">บันทึกท็อปปิ้งใหม่</button>
                     </div>
                   )}
 
                   {toppings.length > 0 && (
-                    <div className="space-y-2 mt-4 text-left pt-4 border-t border-orange-200/50">
-                      <p className="text-xs font-bold text-orange-500 mb-2">ท็อปปิ้งที่มีในระบบ</p>
+                    <div className="space-y-2 mt-3 text-left pt-3 border-t border-amber-200/50">
+                      <p className="text-[11px] font-bold text-amber-800 mb-1">ท็อปปิ้งในระบบ</p>
                       {toppings.map(t => (
-                        <div key={t.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-orange-100 shadow-sm">
-                          <span className="text-sm font-bold text-primary">{t.name} <span className="text-orange-500 text-xs">(+฿{t.price})</span></span>
-                          <button onClick={() => handleDeleteTopping(t.id)} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"><Trash2 size={16}/></button>
+                        <div key={t.id} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-amber-200/60 shadow-2xs">
+                          <span className="text-xs font-bold text-slate-800">{t.name} <span className="text-amber-600 text-[10px]">(+฿{t.price})</span></span>
+                          <button onClick={() => handleDeleteTopping(t.id)} className="text-rose-400 p-1.5 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={15}/></button>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
                 
-                <div className="space-y-8">
+                <div className="space-y-6">
                   {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(category => {
                     let itemsInCategory = menuItems
                       .filter(item => {
@@ -2104,8 +2253,8 @@ export default function App() {
                     if (itemsInCategory.length === 0) return null;
 
                     return (
-                      <div key={category} className="space-y-3">
-                        <h4 className="font-bold text-lg text-primary border-b-2 border-accent/20 pb-2 ml-1">{category}</h4>
+                      <div key={category} className="space-y-2.5">
+                        <h4 className="font-extrabold text-sm text-slate-800 border-b border-slate-200 pb-1.5 ml-1">{category}</h4>
                         {itemsInCategory.map((item, idx) => (
                           <div key={item.id} className="flex flex-col gap-1">
                             <div 
@@ -2114,24 +2263,24 @@ export default function App() {
                               onDragEnter={(e) => dragOverItem.current = idx}
                               onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-50', 'scale-95'); handleSortDrop(itemsInCategory); }}
                               onDragOver={(e) => e.preventDefault()}
-                              className="flex justify-between items-center bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing"
+                              className="flex justify-between items-center bg-white p-3.5 rounded-2xl border border-slate-200/70 shadow-2xs transition-all hover:shadow-xs cursor-grab active:cursor-grabbing"
                             >
-                              <div className="flex items-center gap-3">
-                                <div className="flex flex-col items-center gap-1 z-10">
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === 0 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowUp size={14}/></button>
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1 || adminSearchQuery} className={`p-1.5 rounded-lg transition-all ${idx === itemsInCategory.length - 1 || adminSearchQuery ? 'text-gray-200' : 'text-accent bg-orange-50 active:scale-90 hover:bg-orange-100'}`}><ArrowDown size={14}/></button>
+                              <div className="flex items-center gap-2.5">
+                                <div className="flex flex-col items-center gap-0.5 z-10">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'up', itemsInCategory); }} disabled={idx === 0 || adminSearchQuery} className={`p-1 rounded-md transition-all ${idx === 0 || adminSearchQuery ? 'text-slate-200' : 'text-amber-800 bg-amber-50 hover:bg-amber-100'}`}><ArrowUp size={13}/></button>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleMoveMenu(item, 'down', itemsInCategory); }} disabled={idx === itemsInCategory.length - 1 || adminSearchQuery} className={`p-1 rounded-md transition-all ${idx === itemsInCategory.length - 1 || adminSearchQuery ? 'text-slate-200' : 'text-amber-800 bg-amber-50 hover:bg-amber-100'}`}><ArrowDown size={13}/></button>
                                 </div>
-                                <img src={item.image} className={`w-14 h-14 rounded-2xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
+                                <img src={item.image} className={`w-12 h-12 rounded-xl object-cover pointer-events-none ${item.isSoldOut ? 'grayscale opacity-50' : ''}`} alt="list" />
                                 <div>
-                                  <p className="font-bold text-sm text-primary flex items-center gap-1 flex-wrap">
+                                  <p className="font-bold text-xs text-slate-800 flex items-center gap-1 flex-wrap">
                                     {item.name} 
-                                    {item.isPromoted && <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">แนะนำ</span>}
-                                    {item.isSoldOut && <span className="text-[8px] bg-gray-500 text-white px-1.5 py-0.5 rounded-full">หมด</span>}
+                                    {item.isPromoted && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.2 rounded-full font-bold">แนะนำ</span>}
+                                    {item.isSoldOut && <span className="text-[8px] bg-slate-500 text-white px-1.5 py-0.2 rounded-full font-bold">หมด</span>}
                                   </p>
-                                  <p className="text-xs text-accent font-bold">฿{item.price}</p>
+                                  <p className="text-xs text-amber-800 font-black">฿{item.price}</p>
                                 </div>
                               </div>
-                              <div className="flex gap-2 z-10">
+                              <div className="flex gap-1.5 z-10">
                                 <button type="button" onClick={(e) => { 
                                   e.stopPropagation(); 
                                   if (editingMenu && editingMenu.id === item.id) {
@@ -2139,12 +2288,114 @@ export default function App() {
                                   } else {
                                     setEditingMenu(item); 
                                   }
-                                }} className={`p-3 active:scale-90 transition-all rounded-xl ${editingMenu && editingMenu.id === item.id ? 'bg-orange-500 text-white shadow-md' : 'text-blue-500 hover:bg-blue-100 bg-blue-50'}`}>
-                                  {editingMenu && editingMenu.id === item.id ? <X size={16}/> : <Edit size={16}/>}
+                                }} className={`p-2.5 active:scale-90 transition-all rounded-xl ${editingMenu && editingMenu.id === item.id ? 'bg-amber-800 text-white shadow-xs' : 'text-blue-600 hover:bg-blue-100 bg-blue-50'}`}>
+                                  {editingMenu && editingMenu.id === item.id ? <X size={15}/> : <Edit size={15}/>}
                                 </button>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-3 text-red-500 hover:bg-red-100 active:scale-90 transition-all bg-red-50 rounded-xl"><Trash2 size={16}/></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteMenu(item.id); }} className="p-2.5 text-rose-500 hover:bg-rose-100 active:scale-90 transition-all bg-rose-50 rounded-xl"><Trash2 size={15}/></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDownloadImage(item.image, `menu_${item.name}.jpg`); }} className="p-2.5 text-emerald-600 hover:bg-emerald-100 active:scale-90 transition-all bg-emerald-50 rounded-xl"><Download size={15}/></button>
                               </div>
                             </div>
+
+                            {editingMenu && editingMenu.id === item.id && (
+                              <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200 shadow-inner mt-1 mb-3 mx-1 animate-in slide-in-from-top-2 space-y-3">
+                                <div className="flex justify-between items-center mb-1 border-b border-amber-200/60 pb-2">
+                                   <h4 className="font-bold text-xs text-amber-900 flex items-center gap-1.5"><Edit size={15}/> แก้ไขเมนู</h4>
+                                </div>
+                                <input type="text" placeholder="ชื่อเมนู" className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-amber-200 bg-white font-bold" value={editingMenu.name} onChange={e => setEditingMenu({...editingMenu, name: e.target.value})} />
+                                <div className="flex gap-2">
+                                  <input type="number" placeholder="ราคาปกติ" className="w-1/2 p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-amber-200 bg-white font-bold" value={editingMenu.price} onChange={e => setEditingMenu({...editingMenu, price: e.target.value})} />
+                                  <select className="w-1/2 p-3.5 rounded-2xl text-xs outline-none shadow-2xs bg-white border border-amber-200 font-bold text-slate-700" value={editingMenu.category} onChange={e => setEditingMenu({...editingMenu, category: e.target.value})}>
+                                    {CATEGORIES.filter(c => c !== '🔥 เมนูขายดี').map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                </div>
+
+                                <div className="p-3 bg-white rounded-2xl border border-amber-200 text-left">
+                                  <label className="text-[10px] font-bold text-amber-900 block mb-2">ระดับความหวานที่เลือกได้:</label>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {SWEETNESS.map(level => {
+                                      const current = editingMenu.allowedSweetness || SWEETNESS;
+                                      const isSelected = current.includes(level);
+                                      return (
+                                        <button
+                                          key={level}
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = isSelected 
+                                              ? current.filter(s => s !== level) 
+                                              : [...current, level];
+                                            setEditingMenu({ ...editingMenu, allowedSweetness: updated });
+                                          }}
+                                          className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
+                                            isSelected ? 'bg-amber-800 text-white border-amber-800 shadow-2xs' : 'bg-slate-50 text-slate-400 border-slate-200'
+                                          }`}
+                                        >
+                                          {level}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-blue-50/80 rounded-2xl border border-blue-200/80 cursor-pointer transition-all">
+                                    <input type="checkbox" checked={editingMenu.isOnlyBlend} onChange={e => setEditingMenu({...editingMenu, isOnlyBlend: e.target.checked, allowBlend: e.target.checked ? true : editingMenu.allowBlend})} className="w-4 h-4 accent-blue-600 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-blue-700 flex items-center gap-1"><Zap size={13} className="text-blue-500" fill="currentColor"/> เป็นเมนูเฉพาะปั่นเท่านั้น</span>
+                                  </label>
+
+                                  <label className={`flex items-center justify-center gap-1 p-2.5 rounded-2xl border cursor-pointer transition-all ${editingMenu.isOnlyBlend ? 'bg-slate-100 border-slate-200 opacity-50' : 'bg-white border-slate-200'}`}>
+                                    <input type="checkbox" disabled={editingMenu.isOnlyBlend} checked={editingMenu.isOnlyBlend || editingMenu.allowBlend !== false} onChange={e => setEditingMenu({...editingMenu, allowBlend: e.target.checked})} className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-slate-600">มีเมนูปั่น</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-2.5 bg-white rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                                    <input type="checkbox" checked={editingMenu.allowTopping !== false} onChange={e => setEditingMenu({...editingMenu, allowTopping: e.target.checked})} className="w-4 h-4 accent-amber-700 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-slate-600">ท็อปปิ้งได้</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-2.5 bg-white rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                                    <input type="checkbox" checked={editingMenu.hasFreePearl} onChange={e => setEditingMenu({...editingMenu, hasFreePearl: e.target.checked})} className="w-4 h-4 accent-amber-500 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1"><Star size={11} className="text-amber-500" fill="currentColor"/> มุกฟรี</span>
+                                  </label>
+
+                                  <label className="flex items-center justify-center gap-1 p-2.5 bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition-all">
+                                    <input type="checkbox" checked={editingMenu.isSoldOut} onChange={e => setEditingMenu({...editingMenu, isSoldOut: e.target.checked})} className="w-4 h-4 accent-slate-600 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-slate-600">ปิดขายชั่วคราว</span>
+                                  </label>
+
+                                  <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-rose-50/80 rounded-2xl border border-rose-200/80 cursor-pointer transition-all">
+                                    <input type="checkbox" checked={editingMenu.isPromoted} onChange={e => setEditingMenu({...editingMenu, isPromoted: e.target.checked})} className="w-4 h-4 accent-rose-600 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-rose-700 flex items-center gap-1"><Star size={13} className="text-rose-500" fill="currentColor"/> ตั้งเป็นเมนูแนะนำ</span>
+                                  </label>
+
+                                  {editingMenu.category === 'มัทฉะ' && (
+                                    <label className="col-span-2 flex items-center justify-center gap-1.5 p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 cursor-pointer transition-all">
+                                      <input type="checkbox" checked={editingMenu.hasTeaType} onChange={e => setEditingMenu({...editingMenu, hasTeaType: e.target.checked})} className="w-4 h-4 accent-emerald-600 cursor-pointer" />
+                                      <span className="text-[10px] font-bold text-emerald-800">🍵 ให้ลูกค้าเลือกผงชาได้</span>
+                                    </label>
+                                  )}
+                                </div>
+
+                                {editingMenu.allowBlend !== false && editingMenu.category !== 'สมูทตี้โยเกิร์ต' && editingMenu.category !== 'ผลไม้และสมูทตี้' && (
+                                  <div className="mt-1 text-left">
+                                    <label className="text-[10px] font-bold text-slate-400 ml-1">บวกราคาเพิ่มสำหรับปั่น (บาท)</label>
+                                    <input type="number" placeholder="เช่น 5" className="w-full mt-1 p-3.5 rounded-2xl text-xs outline-none shadow-2xs bg-white border border-slate-200 font-bold" value={editingMenu.blendPrice} onChange={e => setEditingMenu({...editingMenu, blendPrice: e.target.value})} />
+                                  </div>
+                                )}
+
+                                <label className="cursor-pointer bg-white border border-slate-200 p-3.5 rounded-2xl text-xs font-bold block shadow-2xs text-slate-400 hover:text-amber-800 transition-all mt-2">
+                                  <Upload size={16} className="inline mr-2"/> {editingMenu.image ? 'เปลี่ยนรูปภาพ' : 'อัปโหลดรูปภาพเมนู'}
+                                  <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                                    const file = e.target.files[0];
+                                    if (file) { try { setEditingMenu({...editingMenu, image: await compressImage(file)}); } catch(err) { console.error(err); } }
+                                  }} />
+                                </label>
+                                
+                                <div className="flex gap-2 pt-1">
+                                  <button onClick={() => setEditingMenu(null)} className="flex-1 bg-white border border-slate-200 text-slate-500 py-3 rounded-2xl font-bold text-xs">ยกเลิก</button>
+                                  <button onClick={handleUpdateMenu} className="flex-[2] bg-amber-800 text-white py-3 rounded-2xl font-bold text-xs shadow-md active:scale-97 transition-all flex items-center justify-center gap-1.5"><Save size={16}/> บันทึกการแก้ไข</button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -2154,68 +2405,254 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB: ตั้งค่าบัญชีและธีมร้าน */}
+            {/* TAB: ตั้งค่าร้าน */}
             {adminTab === 'settings' && (
-              <div className="space-y-8 animate-in fade-in">
-                
-                {/* 1. ตั้งค่าธีมร้าน */}
-                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[2.5rem] border-2 border-dashed border-indigo-200 space-y-4 shadow-inner relative overflow-hidden">
-                  <h3 className="font-bold text-sm text-indigo-700 uppercase tracking-widest text-center flex items-center justify-center gap-2"><Palette size={16}/> เลือกธีมร้านค้า</h3>
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="bg-slate-50 p-5 rounded-3xl border-2 border-dashed border-slate-200 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-indigo-700 uppercase tracking-wider text-center flex items-center justify-center gap-1.5"><Palette size={15}/> เลือกธีมร้านค้า</h3>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
                      {Object.entries(THEMES).map(([key, theme]) => (
-                        <button key={key} onClick={() => updateTheme(key)} className={`py-3 px-2 rounded-2xl font-bold text-[11px] shadow-sm transition-all border-2 flex items-center justify-center gap-1 ${storeSettings.theme === key ? 'border-indigo-500 bg-indigo-600 text-white scale-105 shadow-md' : 'border-white bg-white text-gray-600 hover:border-indigo-200'}`}>
+                        <button key={key} onClick={() => updateTheme(key)} className={`py-3 px-2 rounded-2xl font-bold text-[10px] shadow-2xs transition-all border flex items-center justify-center gap-1 ${storeSettings.theme === key ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200'}`}>
                            {theme.name}
                         </button>
                      ))}
                   </div>
+
+                  {storeSettings.theme === 'custom' && (
+                     <div className="mt-3 p-4 bg-white/90 rounded-2xl border border-indigo-100 shadow-2xs animate-in fade-in">
+                        <label className="text-[10px] font-bold text-indigo-900 mb-2 block text-center">🖼️ อัปโหลดรูปพื้นหลังร้าน</label>
+                        <div className="flex flex-col gap-2.5">
+                           <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-200 text-indigo-600 py-3 px-3 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-1 shadow-2xs hover:bg-indigo-50 transition-all">
+                             <Upload size={18}/> {editCustomBgImage ? 'เปลี่ยนรูปพื้นหลัง' : 'เลือกรูปภาพ'}
+                             <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                               const file = e.target.files[0];
+                               if(file) {
+                                 try {
+                                   const compressedImage = await compressImage(file, 1200, 1200, 0.8); 
+                                   setEditCustomBgImage(compressedImage);
+                                 } catch(err) { console.error(err); }
+                               }
+                             }} />
+                           </label>
+
+                           {editCustomBgImage && <img src={editCustomBgImage} className="w-full h-28 object-cover rounded-xl shadow-xs border border-slate-200" alt="Bg Preview" />}
+                           {editCustomBgImage && (
+                              <button onClick={async () => {
+                                 try { 
+                                    await setDoc(doc(db, 'settings', 'store'), { customBgImage: editCustomBgImage }, { merge: true }); 
+                                    showAlert('บันทึกรูปพื้นหลังสำเร็จ! 🎨'); 
+                                 } catch(e) { showAlert(e.message); }
+                              }} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-xs shadow-md active:scale-97 transition-all">
+                                 บันทึกรูปพื้นหลัง
+                              </button>
+                           )}
+                        </div>
+                     </div>
+                  )}
                 </div>
                 
-                {/* 2. สถานะร้าน */}
-                <div className="bg-orange-50 p-6 rounded-[2.5rem] border-2 border-dashed border-orange-200 space-y-4 shadow-inner relative">
-                  <h3 className="font-bold text-sm text-accent uppercase tracking-widest text-center">สถานะร้าน และ วัตถุดิบ</h3>
-                  <div className="flex justify-center gap-3 pt-2">
-                    <button onClick={() => updateStoreStatus(true)} className={`flex-1 py-4 rounded-2xl font-bold flex justify-center items-center gap-2 shadow-sm transition-all ${storeSettings.isStoreOpen !== false ? 'bg-green-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100 hover:border-green-200'}`}><CheckCircle size={18}/> เปิดร้านแล้ว</button>
-                    <button onClick={() => updateStoreStatus(false)} className={`flex-1 py-4 rounded-2xl font-bold flex justify-center items-center gap-2 shadow-sm transition-all ${storeSettings.isStoreOpen === false ? 'bg-red-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100 hover:border-red-200'}`}><X size={18}/> ปิดร้านแล้ว</button>
+                <div className="bg-amber-50/80 p-5 rounded-3xl border-2 border-dashed border-amber-200/80 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-amber-900 uppercase tracking-wider text-center">สถานะร้าน และ วัตถุดิบ</h3>
+                  <div className="flex justify-center gap-2 pt-1">
+                    <button onClick={() => updateStoreStatus(true)} className={`flex-1 py-3 rounded-2xl font-bold flex justify-center items-center gap-1.5 shadow-2xs transition-all text-xs ${storeSettings.isStoreOpen !== false ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white text-slate-400 border border-slate-200'}`}><CheckCircle size={16}/> เปิดร้านแล้ว</button>
+                    <button onClick={() => updateStoreStatus(false)} className={`flex-1 py-3 rounded-2xl font-bold flex justify-center items-center gap-1.5 shadow-2xs transition-all text-xs ${storeSettings.isStoreOpen === false ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-400 border border-slate-200'}`}><X size={16}/> ปิดร้านแล้ว</button>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-amber-200/50">
+                    <label className="flex items-center justify-between p-3 bg-white rounded-2xl shadow-2xs border border-amber-200/60 cursor-pointer transition-all">
+                      <div>
+                        <p className="font-bold text-xs text-slate-800 flex items-center gap-1">🚫 วันนี้ไม่มีเมนูปั่น</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">ปิดรับออร์เดอร์ที่เป็นเมนูปั่นทั้งหมด</p>
+                      </div>
+                      <input type="checkbox" checked={storeSettings.isBlendOut || false} onChange={async (e) => {
+                         try { await setDoc(doc(db, 'settings', 'store'), { isBlendOut: e.target.checked }, { merge: true }); } catch(err) { showAlert(err.message); }
+                      }} className="w-4 h-4 accent-amber-600 cursor-pointer" />
+                    </label>
                   </div>
                 </div>
 
-                {/* 3. ตั้งค่าช่องทางชำระเงิน */}
-                <div className="bg-gray-50 p-6 rounded-[2.5rem] border-2 border-dashed border-gray-200 space-y-4 shadow-inner relative">
-                  <h3 className="font-bold text-sm text-accent uppercase tracking-widest text-center">ตั้งค่าช่องทางชำระเงิน</h3>
+                {/* [ADDED] Minimum Order Setting Card */}
+                <div className="bg-amber-50/80 p-5 rounded-3xl border-2 border-dashed border-amber-300 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-amber-950 uppercase tracking-wider text-center flex items-center justify-center gap-1.5">
+                    <DollarSign size={16} className="text-amber-800" /> ตั้งค่ายอดสั่งซื้อขั้นต่ำ
+                  </h3>
                   
                   <div>
-                    <label className="text-xs text-gray-500 mb-2 block font-bold">หมายเลขพร้อมเพย์</label>
-                    <input type="text" placeholder="เช่น 0812345678" className="w-full p-4 rounded-2xl text-sm outline-none shadow-sm focus:ring-2 focus:ring-accent border border-transparent transition-all font-bold" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} />
+                    <label className="text-[10px] text-slate-600 mb-1 block font-bold">
+                      ยอดสั่งซื้อขั้นต่ำ (บาท) <span className="text-[9px] text-slate-400 font-medium">(ใส่ 0 หากไม่มีขั้นต่ำ)</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      placeholder="เช่น 40" 
+                      className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-amber-200 font-bold text-slate-800 bg-white" 
+                      value={editMinOrderAmount} 
+                      onChange={e => setEditMinOrderAmount(Number(e.target.value) || 0)} 
+                    />
+                    <p className="text-[9px] text-amber-800 font-medium mt-1 leading-normal">
+                      * ถ้ายอดในตะกร้าต่ำกว่าจำนวนนี้ ลูกค้าจะไม่สามารถกดยืนยันการสั่งซื้อได้
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const sanitizedMin = Math.max(0, Number(editMinOrderAmount) || 0);
+                        await setDoc(doc(db, 'settings', 'store'), { minOrderAmount: sanitizedMin }, { merge: true });
+                        showAlert(sanitizedMin > 0 ? `กำหนดยอดสั่งซื้อขั้นต่ำเป็น ฿${sanitizedMin} เรียบร้อยแล้วค่ะ! 🐮` : 'ปิดการกำหนดยอดสั่งซื้อขั้นต่ำเรียบร้อยแล้วค่ะ! 🐮');
+                      } catch(e) { 
+                        showAlert("Error: " + e.message); 
+                      }
+                    }} 
+                    className="w-full bg-amber-800 hover:bg-amber-900 text-white py-3.5 rounded-2xl font-bold text-xs active:scale-97 transition-all shadow-md mt-1"
+                  >
+                    บันทึกยอดสั่งซื้อขั้นต่ำ
+                  </button>
+                </div>
+
+                <div className="bg-rose-50/80 p-5 rounded-3xl border-2 border-dashed border-rose-200/80 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-rose-700 uppercase tracking-wider text-center flex items-center justify-center gap-1.5">🤖 ปิดร้านอัตโนมัติ (คิวล้น)</h3>
+                  
+                  <div className="mt-1">
+                    <label className="flex items-center justify-between p-3 bg-white rounded-2xl shadow-2xs border border-rose-200/60 cursor-pointer transition-all">
+                      <div>
+                        <p className="font-bold text-xs text-slate-800 flex items-center gap-1">🛑 ระบบปิดร้านออโต้เมื่อคิวเยอะ</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">ช่วยปิดร้านแทนแอดมิน เพื่อกันลูกค้ารอนาน</p>
+                      </div>
+                      <input type="checkbox" checked={editAutoCloseEnabled} onChange={e => setEditAutoCloseEnabled(e.target.checked)} className="w-4 h-4 accent-rose-600 cursor-pointer" />
+                    </label>
+                  </div>
+
+                  <div className={`transition-all space-y-2.5 ${editAutoCloseEnabled ? 'opacity-100 h-auto' : 'opacity-40 h-auto pointer-events-none'}`}>
+                    <label className="text-[10px] text-slate-500 block font-bold">จำนวนคิวสูงสุดก่อนปิดรับออร์เดอร์</label>
+                    <input type="number" placeholder="เช่น 3" className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-rose-200 bg-white text-slate-800 font-bold" value={editMaxQueue} onChange={e => setEditMaxQueue(Number(e.target.value))} />
+
+                    <div className="pt-1">
+                      <label className="text-[10px] text-slate-500 mb-1.5 block font-bold">เลือกวันที่จะให้ระบบคิวอัตโนมัติทำงาน</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {THAI_DAYS.map((day, idx) => {
+                          const isSelected = editAutoCloseDays.includes(idx);
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                setEditAutoCloseDays(prev => 
+                                  prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
+                                isSelected 
+                                  ? 'bg-rose-600 text-white border-rose-600 shadow-2xs' 
+                                  : 'bg-white text-slate-500 border-slate-200'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button onClick={async () => {
+                    try { 
+                      await setDoc(doc(db, 'settings', 'store'), { 
+                        autoCloseEnabled: editAutoCloseEnabled, 
+                        maxQueue: editMaxQueue,
+                        autoCloseDays: editAutoCloseDays
+                      }, { merge: true }); 
+                      showAlert('อัปเดตระบบปิดร้านอัตโนมัติเรียบร้อย! 🛑'); 
+                    } catch(e) { showAlert("Error: " + e.message); }
+                  }} className="w-full bg-rose-600 text-white py-3.5 rounded-2xl font-bold text-xs active:scale-97 transition-all shadow-md mt-2">
+                    บันทึกระบบคิวอัตโนมัติ
+                  </button>
+                </div>
+
+                <div className="bg-slate-50/80 p-5 rounded-3xl border-2 border-dashed border-slate-200 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-amber-900 uppercase tracking-wider text-center">ตั้งค่าช่องทางชำระเงิน</h3>
+                  
+                  <div>
+                    <label className="text-[10px] text-slate-500 mb-1 block font-bold">หมายเลขพร้อมเพย์</label>
+                    <input type="text" placeholder="เช่น 0812345678" className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-slate-200 font-bold text-slate-800" value={editPromptPay} onChange={e => setEditPromptPay(e.target.value)} />
+                  </div>
+
+                  <div className="pt-1">
+                    <label className="text-[10px] text-slate-500 mb-1 block font-bold">รูป QR Code ของร้าน</label>
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 cursor-pointer bg-white border border-slate-200 text-slate-500 py-3 px-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs hover:bg-slate-50 transition-all">
+                        <Upload size={15}/> {editQrCodeImage ? 'เปลี่ยนรูป QR Code' : 'เลือกรูปภาพ'}
+                        <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                          const file = e.target.files[0];
+                          if(file) { try { const compressedImage = await compressImage(file); setEditQrCodeImage(compressedImage); } catch(err) { console.error(err); } }
+                        }} />
+                      </label>
+                      {editQrCodeImage && <img src={editQrCodeImage} className="w-12 h-12 rounded-xl object-cover shadow-2xs border border-slate-200 bg-white" alt="QR Preview" />}
+                      {editQrCodeImage && <button onClick={() => setEditQrCodeImage('')} className="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16}/></button>}
+                    </div>
                   </div>
 
                   <button onClick={async () => {
                     try { await setDoc(doc(db, 'settings', 'store'), { promptPayNo: editPromptPay, qrCodeImage: editQrCodeImage }, { merge: true }); showAlert('อัปเดตการตั้งค่าร้านสำเร็จ! 🐮'); } catch(e) { showAlert("Error: " + e.message); }
-                  }} className="w-full bg-primary text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-md mt-4 hover:opacity-90">
+                  }} className="w-full bg-slate-900 text-white py-3.5 rounded-2xl font-bold text-xs active:scale-97 transition-all shadow-md mt-2">
                     บันทึกการตั้งค่าร้าน
                   </button>
                 </div>
 
-                {/* [MODIFIED] 4. ตั้งค่าเชื่อมต่อ Google Sheets Web App */}
-                <div className="bg-emerald-50 p-6 rounded-[2.5rem] border-2 border-dashed border-emerald-200 space-y-4 shadow-inner relative">
-                  <h3 className="font-bold text-sm text-emerald-800 uppercase tracking-widest text-center flex items-center justify-center gap-2">
-                    <Database size={16}/> เชื่อมต่อ Google Sheets & Dashboard
+                <div className="bg-blue-50/80 p-5 rounded-3xl border-2 border-dashed border-blue-200/80 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-blue-700 uppercase tracking-wider text-center flex items-center justify-center gap-1.5"><BellRing size={15}/> แจ้งเตือนออร์เดอร์ (LINE)</h3>
+                  
+                  <div>
+                    <label className="text-[10px] text-slate-500 mb-1 block font-bold">ลิงก์เพิ่มเพื่อนร้าน (LINE Official Account)</label>
+                    <input type="text" placeholder="เช่น https://lin.ee/xxxxx" className="w-full p-3.5 rounded-2xl text-xs outline-none shadow-2xs border border-blue-200 transition-all text-blue-800 font-bold bg-white" value={editShopLineUrl} onChange={e => setEditShopLineUrl(e.target.value)} />
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-blue-100">
+                    <label className="flex items-center justify-between p-3 bg-white rounded-2xl shadow-2xs border border-blue-100 cursor-pointer transition-all">
+                      <div>
+                        <p className="font-bold text-xs text-slate-800 flex items-center gap-1">🔔 เปิดแจ้งเตือนผ่าน LINE ส่วนตัว</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">บอทจะทักไปบอกทันทีที่มีออร์เดอร์</p>
+                      </div>
+                      <input type="checkbox" checked={editNotifyAdmin} onChange={e => setEditNotifyAdmin(e.target.checked)} className="w-4 h-4 accent-blue-600 cursor-pointer" />
+                    </label>
+                  </div>
+
+                  <div className={`transition-all ${editNotifyAdmin ? 'opacity-100 h-auto' : 'opacity-40 h-auto pointer-events-none'}`}>
+                    <label className="text-[10px] text-slate-500 mb-1 block font-bold">LINE User ID ของแอดมิน</label>
+                    <div className="flex gap-2">
+                       <input type="text" placeholder="ระบบจะดึงให้อัตโนมัติ..." className="flex-1 p-3.5 rounded-2xl text-[10px] outline-none shadow-2xs border border-blue-200 bg-white text-slate-500 font-bold" value={editAdminLineId} onChange={e => setEditAdminLineId(e.target.value)} readOnly />
+                       <button onClick={() => setEditAdminLineId(lineProfile.userId)} className="bg-blue-600 text-white px-3 rounded-2xl text-[10px] font-bold shadow-2xs active:scale-95 whitespace-nowrap hover:bg-blue-700 transition-colors">ดึง ID</button>
+                    </div>
+                  </div>
+
+                  <button onClick={async () => {
+                    if (editNotifyAdmin && !editAdminLineId) return showAlert('กรุณากดดึง LINE ID ก่อนบันทึกครับ');
+                    try { await setDoc(doc(db, 'settings', 'store'), { notifyAdmin: editNotifyAdmin, adminLineId: editAdminLineId, shopLineUrl: editShopLineUrl }, { merge: true }); showAlert('อัปเดตการแจ้งเตือนและลิงก์ร้านสำเร็จ! 🎉'); } catch(e) { showAlert("Error: " + e.message); }
+                  }} className="w-full bg-blue-600 text-white py-3.5 rounded-2xl font-bold text-xs active:scale-97 transition-all shadow-md mt-2">
+                    บันทึกการแจ้งเตือน
+                  </button>
+                </div>
+
+                <div className="bg-emerald-50/80 p-5 rounded-3xl border-2 border-dashed border-emerald-200/80 space-y-3 shadow-inner relative">
+                  <h3 className="font-bold text-xs text-emerald-800 uppercase tracking-wider text-center flex items-center justify-center gap-1.5">
+                    <Database size={15}/> เชื่อมต่อ Google Sheets & Dashboard
                   </h3>
                   
                   <div>
-                    <label className="text-xs text-gray-500 mb-2 block font-bold">Google Apps Script Web App URL</label>
+                    <label className="text-[10px] text-slate-500 mb-1 block font-bold">Google Apps Script Web App URL</label>
                     <input 
                       type="text" 
                       placeholder="https://script.google.com/macros/s/AKfycb.../exec" 
-                      className="w-full p-4 rounded-2xl text-xs outline-none shadow-sm focus:ring-2 focus:ring-emerald-400 border border-transparent transition-all font-mono font-bold text-emerald-900 bg-white" 
+                      className="w-full p-3.5 rounded-2xl text-[11px] outline-none shadow-2xs border border-emerald-200 font-mono font-bold text-emerald-900 bg-white" 
                       value={editGoogleSheetUrl} 
                       onChange={e => setEditGoogleSheetUrl(e.target.value)} 
                     />
-                    <p className="text-[9px] text-emerald-600 font-bold mt-2 leading-relaxed">
-                      * ระบบจะทำการบันทึกทุกๆ ออร์เดอร์และอัปเดตสถานะ (กำลังปรุง/จัดส่งสำเร็จ) ส่งตรงเข้า Google Sheets แบบ Real-time ทันที
+                    <p className="text-[9px] text-emerald-600 font-bold mt-1.5 leading-normal">
+                      * ระบบจะทำการบันทึกทุกๆ ออร์เดอร์และอัปเดตสถานะส่งตรงเข้า Google Sheets แบบ Real-time
                     </p>
                   </div>
 
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-1">
                     <button 
                       onClick={async () => {
                         if (!editGoogleSheetUrl) return showAlert('กรุณากรอก Web App URL ก่อนกดทดสอบครับ');
@@ -2234,7 +2671,7 @@ export default function App() {
                         });
                         showAlert('ส่งข้อมูลทดสอบเรียบร้อยแล้วค่ะ! กรุณาเช็คในตาราง Google Sheets ของคุณ 🐮');
                       }} 
-                      className="w-1/3 bg-white border border-emerald-300 text-emerald-700 py-3.5 rounded-2xl font-bold text-xs shadow-sm active:scale-95 transition-all hover:bg-emerald-100"
+                      className="w-1/3 bg-white border border-emerald-300 text-emerald-700 py-3 rounded-2xl font-bold text-xs shadow-2xs active:scale-95 transition-all hover:bg-emerald-100"
                     >
                       🧪 ทดสอบส่ง
                     </button>
@@ -2246,7 +2683,7 @@ export default function App() {
                           showAlert('บันทึกการเชื่อมต่อ Google Sheets สำเร็จ! 📊'); 
                         } catch(e) { showAlert("Error: " + e.message); }
                       }} 
-                      className="w-2/3 bg-emerald-600 text-white py-3.5 rounded-2xl font-bold text-xs active:scale-95 transition-all shadow-md hover:bg-emerald-700"
+                      className="w-2/3 bg-emerald-600 text-white py-3 rounded-2xl font-bold text-xs active:scale-97 transition-all shadow-md hover:bg-emerald-700"
                     >
                       บันทึก URL Google Sheets
                     </button>
@@ -2276,37 +2713,67 @@ export default function App() {
           : SWEETNESS;
 
         return (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-end justify-center backdrop-blur-xs p-3 animate-in fade-in">
           
-          <div className="bg-white rounded-t-[3.5rem] w-full max-w-md animate-in slide-in-from-bottom-full duration-500 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-t-[3rem] w-full max-w-md animate-in slide-in-from-bottom-full duration-400 shadow-2xl max-h-[88vh] flex flex-col overflow-hidden">
             
-            <div className="w-full h-[30vh] relative flex-shrink-0 bg-gray-50">
+            <div className="w-full h-[28vh] relative flex-shrink-0 bg-slate-50">
               <img src={optionModalItem.image} alt={optionModalItem.name} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-white via-white/10 to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-white/20 to-transparent"></div>
             </div>
 
-            <div className="p-10 pt-6 space-y-10 overflow-y-auto hide-scrollbar">
-              <div className="flex justify-between items-center"><h3 className="text-2xl font-serif font-bold text-primary">{optionModalItem.name}</h3><button onClick={() => setOptionModalItem(null)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 hover:bg-gray-100 transition-colors"><X/></button></div>
-              <div className="space-y-8">
+            <div className="p-6 pt-4 space-y-6 overflow-y-auto hide-scrollbar flex-1">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-serif font-black text-slate-900">{optionModalItem.name}</h3>
+                  <p className="text-xs text-amber-800 font-extrabold mt-0.5">เริ่มต้น ฿{optionModalItem.price}</p>
+                </div>
+                <button onClick={() => setOptionModalItem(null)} className="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-colors"><X size={18}/></button>
+              </div>
+
+              <div className="space-y-6">
                 
                 {!isWhipOrCreamCheese && allowedSweetnessList.length > 0 && (
                   <div>
-                    <label className="text-[10px] font-bold block mb-4 text-gray-400 uppercase tracking-widest">ความหวาน</label>
+                    <label className="text-[10px] font-black block mb-2.5 text-slate-400 uppercase tracking-wider">ระดับความหวาน</label>
                     <div className="grid grid-cols-3 gap-2">
                       {allowedSweetnessList.map(l => (
-                        <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3.5 rounded-2xl text-[10px] font-bold border transition-all ${tempOptions.sweetness === l ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>{l}</button>
+                        <button key={l} onClick={() => setTempOptions({...tempOptions, sweetness: l})} className={`py-3 rounded-2xl text-xs font-extrabold border transition-all ${tempOptions.sweetness === l ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>{l}</button>
                       ))}
                     </div>
                   </div>
                 )}
 
                 {optionModalItem.category === 'กาแฟ' && (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                      <div>
-                       <label className="text-[10px] font-bold block mb-4 text-[#5c3a21] uppercase tracking-widest flex items-center gap-1"><Coffee size={14} fill="currentColor"/> เลือกระดับการคั่วเมล็ดกาแฟ</label>
-                       <div className="grid grid-cols-2 gap-3">
-                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วกลาง'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วกลาง' ? 'bg-[#8c522d] text-white border-[#8c522d] shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วกลาง<br/><span className="text-[9px] font-normal">หอมนุ่ม ละมุน</span></button>
-                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วเข้ม'})} className={`py-4 rounded-2xl text-[11px] font-bold border transition-all ${tempOptions.bean === 'คั่วเข้ม' ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'}`}>คั่วเข้ม<br/><span className="text-[9px] font-normal">เข้มข้น ถึงใจ</span></button>
+                       <label className="text-[10px] font-black block mb-2.5 text-amber-900 uppercase tracking-wider flex items-center gap-1"><Coffee size={13} fill="currentColor"/> เลือกระดับการคั่วเมล็ดกาแฟ</label>
+                       <div className="grid grid-cols-2 gap-2">
+                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วกลาง'})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${tempOptions.bean === 'คั่วกลาง' ? 'bg-amber-800 text-white border-amber-800 shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>คั่วกลาง<br/><span className="text-[9px] font-normal opacity-80">หอมนุ่ม ละมุน</span></button>
+                         <button onClick={() => setTempOptions({...tempOptions, bean: 'คั่วเข้ม'})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${tempOptions.bean === 'คั่วเข้ม' ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>คั่วเข้ม<br/><span className="text-[9px] font-normal opacity-80">เข้มข้น ถึงใจ</span></button>
+                       </div>
+                     </div>
+
+                     <label className={`flex justify-between items-center p-3.5 rounded-2xl border cursor-pointer transition-all ${tempOptions.addShot ? 'border-amber-800 bg-amber-50/60' : 'border-slate-200 bg-slate-50/60'}`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-4 h-4 rounded-md flex items-center justify-center ${tempOptions.addShot ? 'bg-amber-800 text-white' : 'bg-white border border-slate-300'}`}>
+                            {tempOptions.addShot && <Check size={12} />}
+                          </div>
+                          <span className={`text-xs font-bold ${tempOptions.addShot ? 'text-slate-900' : 'text-slate-600'}`}>เพิ่มช็อตกาแฟ</span>
+                        </div>
+                        <span className="text-xs font-bold text-amber-800">+฿20</span>
+                        <input type="checkbox" className="hidden" checked={tempOptions.addShot || false} onChange={(e) => setTempOptions({...tempOptions, addShot: e.target.checked})} />
+                     </label>
+                  </div>
+                )}
+
+                {optionModalItem.hasTeaType && (
+                  <div className="space-y-3">
+                     <div>
+                       <label className="text-[10px] font-black block mb-2.5 text-emerald-900 uppercase tracking-wider flex items-center gap-1">🍵 เลือกรสชาติผงชา</label>
+                       <div className="grid grid-cols-2 gap-2">
+                         <button onClick={() => setTempOptions({...tempOptions, teaType: 'มัทฉะ'})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${tempOptions.teaType === 'มัทฉะ' ? 'bg-emerald-700 text-white border-emerald-700 shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>มัทฉะ<br/><span className="text-[9px] font-normal opacity-80">หอมเข้มข้น ดั้งเดิม</span></button>
+                         <button onClick={() => setTempOptions({...tempOptions, teaType: 'โฮจิฉะ'})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${tempOptions.teaType === 'โฮจิฉะ' ? 'bg-amber-800 text-white border-amber-800 shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>โฮจิฉะ<br/><span className="text-[9px] font-normal opacity-80">หอมคั่ว ละมุน</span></button>
                        </div>
                      </div>
                   </div>
@@ -2314,7 +2781,7 @@ export default function App() {
 
                 {isWhipCreamOrSauceItem && (
                   <div>
-                    <label className="text-[10px] font-bold block mb-4 text-[#A67C52] uppercase tracking-widest flex items-center gap-1">
+                    <label className="text-[10px] font-black block mb-2.5 text-amber-900 uppercase tracking-wider flex items-center gap-1">
                       ✨ เลือกราดซอสแต่งหน้า
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -2334,10 +2801,10 @@ export default function App() {
                                 }
                               });
                             }}
-                            className={`py-3 px-3 rounded-2xl text-[11px] font-bold border transition-all flex items-center justify-between ${isSelected ? 'bg-amber-700 text-white border-amber-700 shadow-md' : 'bg-white text-gray-500 border-gray-100'}`}
+                            className={`py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-between ${isSelected ? 'bg-amber-800 text-white border-amber-800 shadow-md' : 'bg-white text-slate-600 border-slate-200'}`}
                           >
                             <span className="truncate">{s.name}</span>
-                            {isSelected ? <Check size={14} className="text-white flex-shrink-0" /> : <Plus size={14} className="text-gray-300 flex-shrink-0" />}
+                            {isSelected ? <Check size={14} className="text-white flex-shrink-0" /> : <Plus size={14} className="text-slate-300 flex-shrink-0" />}
                           </button>
                         );
                       })}
@@ -2345,26 +2812,85 @@ export default function App() {
                   </div>
                 )}
 
+                {optionModalItem.hasFreePearl && (
+                  <div>
+                     <label className="text-[10px] font-black block mb-2.5 text-amber-600 uppercase tracking-wider flex items-center gap-1"><Star size={11} fill="currentColor"/> แถมมุกฟรี!</label>
+                     <div className="grid grid-cols-2 gap-2">
+                       <button onClick={() => setTempOptions({...tempOptions, addPearl: true})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${tempOptions.addPearl ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>รับมุก (ฟรี)</button>
+                       <button onClick={() => setTempOptions({...tempOptions, addPearl: false})} className={`py-3 rounded-2xl text-xs font-bold border transition-all ${!tempOptions.addPearl ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-white text-slate-500 border-slate-200'}`}>ไม่รับมุกฟรี</button>
+                     </div>
+                  </div>
+                )}
+
+                {toppings.length > 0 && optionModalItem.allowTopping !== false && (
+                  <div>
+                    <label className="text-[10px] font-black block mb-2.5 text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                      🍨 เลือกท็อปปิ้งเสริม
+                    </label>
+                    <div className="space-y-2">
+                      {toppings.map(t => {
+                        const isSelected = tempOptions.selectedToppings?.find(st => st.id === t.id);
+                        return (
+                          <label key={t.id} className={`flex justify-between items-center p-3 rounded-2xl border cursor-pointer transition-all ${isSelected ? 'border-amber-800 bg-amber-50/60' : 'border-slate-200 bg-slate-50/60'}`}>
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-4 h-4 rounded-md flex items-center justify-center ${isSelected ? 'bg-amber-800 text-white' : 'bg-white border border-slate-300'}`}>
+                                {isSelected && <Check size={12} />}
+                              </div>
+                              <span className={`text-xs font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>{t.name}</span>
+                            </div>
+                            <span className="text-xs font-bold text-amber-800">+฿{t.price}</span>
+                            <input type="checkbox" className="hidden" checked={!!isSelected} onChange={() => {
+                              setTempOptions(prev => {
+                                const currentToppings = prev.selectedToppings || [];
+                                if (isSelected) return { ...prev, selectedToppings: currentToppings.filter(st => st.id !== t.id) };
+                                return { ...prev, selectedToppings: [...currentToppings, t] };
+                              });
+                            }} />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {!isItemBlendedInPreview && !isWhipOrCreamCheese && (
+                  <div className="space-y-2 animate-in fade-in">
+                     <label className="text-[10px] font-black block mb-1 text-slate-400 uppercase tracking-wider">การเสิร์ฟ</label>
+                     <label className={`flex justify-between items-center p-3.5 rounded-2xl border cursor-pointer transition-all ${tempOptions.separateIce ? 'border-amber-800 bg-amber-50/60 shadow-inner' : 'border-slate-200 bg-slate-50/60'}`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-4 h-4 rounded-md flex items-center justify-center ${tempOptions.separateIce ? 'bg-amber-800 text-white' : 'bg-white border border-slate-300'}`}>
+                            {tempOptions.separateIce && <Check size={12} />}
+                          </div>
+                          <span className={`text-xs font-bold ${tempOptions.separateIce ? 'text-slate-900' : 'text-slate-600'}`}>แยกน้ำแข็ง (ใส่ถุงซิปล็อค)</span>
+                        </div>
+                        <span className="text-xs font-bold text-amber-800">+฿5</span>
+                        <input type="checkbox" className="hidden" checked={tempOptions.separateIce || false} onChange={(e) => setTempOptions({...tempOptions, separateIce: e.target.checked})} />
+                     </label>
+                  </div>
+                )}
+
                 {!isWhipOrCreamCheese && (
                   optionModalItem.isOnlyBlend ? (
-                    <div className="grid grid-cols-1 gap-5">
-                       <button onClick={() => setTempOptions({...tempOptions, isBlended: true, separateIce: false})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : 'border-blue-400 bg-blue-50 text-blue-600 shadow-sm'}`}>
-                         <Zap size={32}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span>
+                    <div className="grid grid-cols-1 gap-3">
+                       <button onClick={() => setTempOptions({...tempOptions, isBlended: true, separateIce: false})} disabled={storeSettings.isBlendOut} className={`py-5 rounded-2xl border font-bold flex flex-col items-center gap-2 transition-all ${storeSettings.isBlendOut ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-blue-300 bg-blue-50 text-blue-700 shadow-2xs'}`}>
+                         <Zap size={24}/><span className="text-xs uppercase">เฉพาะปั่น (สมูทตี้) {getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}</span>
                        </button>
                     </div>
                   ) : optionModalItem.allowBlend !== false ? (
-                    <div className="grid grid-cols-2 gap-5">
-                       <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${!tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50'}`}><Coffee size={32}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
-                       <button onClick={() => !storeSettings.isBlendOut && setTempOptions({...tempOptions, isBlended: true, separateIce: false})} disabled={storeSettings.isBlendOut} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all ${storeSettings.isBlendOut ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : (tempOptions.isBlended ? 'border-accent bg-[var(--theme-bg)] text-primary shadow-sm' : 'border-gray-50 text-gray-300 bg-white hover:bg-gray-50')}`}><Zap size={32}/><span className="text-xs uppercase text-center">{storeSettings.isBlendOut ? 'เมนูปั่นหมด' : `ปั่น ${getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}`}</span></button>
+                    <div className="grid grid-cols-2 gap-3">
+                       <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-5 rounded-2xl border font-bold flex flex-col items-center gap-2 transition-all ${!tempOptions.isBlended ? 'border-slate-900 bg-slate-900 text-white shadow-md' : 'border-slate-200 text-slate-400 bg-white'}`}><Coffee size={24}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
+                       <button onClick={() => !storeSettings.isBlendOut && setTempOptions({...tempOptions, isBlended: true, separateIce: false})} disabled={storeSettings.isBlendOut} className={`py-5 rounded-2xl border font-bold flex flex-col items-center gap-2 transition-all ${storeSettings.isBlendOut ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed' : (tempOptions.isBlended ? 'border-slate-900 bg-slate-900 text-white shadow-md' : 'border-slate-200 text-slate-400 bg-white')}`}><Zap size={24}/><span className="text-xs uppercase text-center">{storeSettings.isBlendOut ? 'เมนูปั่นหมด' : `ปั่น ${getAddedBlendPrice(optionModalItem) > 0 ? `(+฿${getAddedBlendPrice(optionModalItem)})` : ''}`}</span></button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-5">
-                       <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-8 rounded-[2.5rem] border-2 font-bold flex flex-col items-center gap-4 transition-all border-accent bg-[var(--theme-bg)] text-primary shadow-sm`}><Coffee size={32}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
+                    <div className="grid grid-cols-1 gap-3">
+                       <button onClick={() => setTempOptions({...tempOptions, isBlended: false})} className={`py-5 rounded-2xl border font-bold flex flex-col items-center gap-2 transition-all border-slate-900 bg-slate-900 text-white shadow-md`}><Coffee size={24}/><span className="text-xs uppercase">เย็น / ปกติ</span></button>
                     </div>
                   )
                 )}
               </div>
-              
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-white">
               <button onClick={() => {
                   const toppingsPrice = (tempOptions.selectedToppings || []).reduce((sum, t) => sum + Number(t.price), 0);
                   const saucesPrice = (tempOptions.selectedSauces || []).reduce((sum, s) => sum + Number(s.price || 0), 0);
@@ -2375,8 +2901,12 @@ export default function App() {
                   
                   const toppingsStr = (tempOptions.selectedToppings || []).map(t => t.id).sort().join('-');
                   const saucesStr = (tempOptions.selectedSauces || []).map(s => typeof s === 'object' ? s.id : s).sort().join('-');
+                  const beanStr = tempOptions.bean ? `-${tempOptions.bean}` : '';
+                  const teaStr = tempOptions.teaType ? `-${tempOptions.teaType}` : '';
+                  const shotStr = tempOptions.addShot ? `-addShot` : '';
+                  const iceStr = (!isItemBlended && !isWhipOrCreamCheese && tempOptions.separateIce) ? `-separateIce` : '';
                   
-                  const cartId = `${optionModalItem.id}-${isWhipOrCreamCheese ? 'nowhip' : tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}-${saucesStr}`;
+                  const cartId = `${optionModalItem.id}-${isWhipOrCreamCheese ? 'nowhip' : tempOptions.sweetness}-${isItemBlended}-${tempOptions.addPearl}-${toppingsStr}-${saucesStr}${beanStr}${teaStr}${shotStr}${iceStr}`;
                   
                   setCart(prev => {
                     const ex = prev.find(i => i.cartId === cartId);
@@ -2384,8 +2914,8 @@ export default function App() {
                     return [...prev, { ...optionModalItem, price: finalP, cartId, ...tempOptions, isBlended: isItemBlended, qty: 1 }];
                   });
                   setOptionModalItem(null);
-                }} className="w-full py-6 bg-primary text-white rounded-[2.5rem] font-bold text-lg active:scale-95 flex items-center justify-center gap-3 shadow-xl hover:opacity-90 transition-all">
-                  <Plus size={24}/> เพิ่มลงตะกร้า • ฿{previewTotalPrice}
+                }} className="w-full py-4 bg-gradient-to-r from-amber-700 to-amber-900 text-white rounded-2xl font-bold text-base active:scale-97 flex items-center justify-center gap-2 shadow-lg transition-all">
+                  <Plus size={20}/> เพิ่มลงตะกร้า • ฿{previewTotalPrice}
               </button>
             </div>
           </div>
@@ -2395,72 +2925,68 @@ export default function App() {
 
       {/* Modal ถ่ายรูปยืนยันการส่งของ */}
       {deliveryModal && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm">
-          <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 shadow-2xl space-y-6">
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg text-primary">ยืนยันการจัดส่งออร์เดอร์</h3>
-              <button onClick={() => setDeliveryModal(null)} className="text-gray-400 p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={20}/></button>
+              <h3 className="font-bold text-base text-slate-800">ยืนยันการจัดส่งออร์เดอร์</h3>
+              <button onClick={() => setDeliveryModal(null)} className="text-slate-400 p-1.5 hover:bg-slate-100 rounded-full transition-colors"><X size={18}/></button>
             </div>
 
-            <div className="space-y-3">
-               <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">จุดส่งสินค้า</label>
+            <div className="space-y-2">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">จุดส่งสินค้า</label>
                <div className="grid grid-cols-3 gap-2">
-                 <button onClick={() => setDeliveryLocation('room')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'room' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Home size={20}/><span className="text-[10px]">หน้าห้อง</span></button>
-                 <button onClick={() => setDeliveryLocation('building')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'building' ? 'border-orange-400 bg-orange-50 text-orange-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><Building size={20}/><span className="text-[10px]">หน้าตึก</span></button>
-                 <button onClick={() => { setDeliveryLocation('pickup'); setDeliveryImage(''); }} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-2 transition-all ${deliveryLocation === 'pickup' ? 'border-green-400 bg-green-50 text-green-600 shadow-sm' : 'border-gray-50 text-gray-400 bg-white'}`}><UserCheck size={20}/><span className="text-[10px]">รับเองที่ร้าน</span></button>
+                 <button onClick={() => setDeliveryLocation('room')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-1 transition-all ${deliveryLocation === 'room' ? 'border-amber-600 bg-amber-50 text-amber-900 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><Home size={18}/><span className="text-[10px]">หน้าห้อง</span></button>
+                 <button onClick={() => setDeliveryLocation('building')} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-1 transition-all ${deliveryLocation === 'building' ? 'border-amber-600 bg-amber-50 text-amber-900 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><Building size={18}/><span className="text-[10px]">หน้าตึก</span></button>
+                 <button onClick={() => { setDeliveryLocation('pickup'); setDeliveryImage(''); }} className={`py-3 rounded-2xl border-2 font-bold flex flex-col items-center gap-1 transition-all ${deliveryLocation === 'pickup' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-2xs' : 'border-slate-100 text-slate-400 bg-white'}`}><UserCheck size={18}/><span className="text-[10px]">รับเองที่ร้าน</span></button>
                </div>
             </div>
 
             {deliveryLocation !== 'pickup' && (
-                <div className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-center animate-in fade-in zoom-in-95">
-                   <p className="text-xs font-bold mb-3 text-primary">แนบรูปถ่ายเป็นหลักฐาน</p>
-                   <label className="cursor-pointer bg-white border border-gray-200 text-gray-500 py-3 px-6 rounded-xl text-[11px] font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-all hover:border-accent hover:text-accent">
-                      <Camera size={16}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกจากแกลเลอรี'}
+                <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200 text-center animate-in fade-in">
+                   <p className="text-xs font-bold mb-2.5 text-slate-800">แนบรูปถ่ายจัดส่ง</p>
+                   <label className="cursor-pointer bg-white border border-slate-200 text-slate-600 py-2.5 px-5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all">
+                      <Camera size={15}/> {deliveryImage ? 'เปลี่ยนรูปภาพ' : 'ถ่ายรูป / เลือกรูปภาพ'}
                       <input type="file" accept="image/*" className="hidden" onChange={async e => {
                          const file = e.target.files[0];
                          if(file){ setDeliveryImage(await compressImage(file)); }
                       }} />
                    </label>
-                   {deliveryImage && <img src={deliveryImage} className="mt-4 h-32 w-full object-cover rounded-xl shadow-sm border border-gray-100" alt="Delivery Proof"/>}
+                   {deliveryImage && <img src={deliveryImage} className="mt-3 h-28 w-full object-cover rounded-xl shadow-xs border border-slate-200" alt="Delivery Proof"/>}
                 </div>
             )}
 
-            <button onClick={handleConfirmDelivery} disabled={isDelivering || (deliveryLocation !== 'pickup' && !deliveryImage)} className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${deliveryLocation === 'pickup' || deliveryImage ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-              {isDelivering ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
-              {isDelivering ? 'กำลังบันทึกและแจ้งเตือน...' : <><CheckCircle size={18}/> ยืนยันการจัดส่ง</>}
+            <button onClick={handleConfirmDelivery} disabled={isDelivering || (deliveryLocation !== 'pickup' && !deliveryImage)} className={`w-full py-3.5 rounded-2xl font-bold text-xs transition-all shadow-md active:scale-97 flex items-center justify-center gap-1.5 ${deliveryLocation === 'pickup' || deliveryImage ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+              {isDelivering ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
+              {isDelivering ? 'กำลังบันทึก...' : <><CheckCircle size={16}/> ยืนยันการจัดส่ง</>}
             </button>
           </div>
         </div>
       )}
 
-      {/* Modal ดูรูปภาพสลิปแบบขยายใหญ่ */}
+      {/* Modal ดูรูปภาพสลิป */}
       {selectedSlip && selectedSlip !== 'cash_payment' && selectedSlip !== 'thaichueithai_payment' && (
-        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
-          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-3xl shadow-2xl border-4 border-white/10 animate-in zoom-in" alt="slip preview" />
+        <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedSlip(null)}>
+          <img src={selectedSlip} className="max-w-full max-h-[80vh] rounded-2xl shadow-2xl border-2 border-white/20 animate-in zoom-in-95" alt="slip preview" />
         </div>
       )}
 
       {/* Modal แจ้งเตือนร้านปิด */}
       {showStoreClosedModal && (
-        <div className="fixed inset-0 bg-black/80 z-[350] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-md">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 border-4 border-red-500 shadow-2xl animate-in zoom-in-95">
-            <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto text-4xl animate-bounce">
-              <AlertCircle size={48} />
+        <div className="fixed inset-0 bg-black/80 z-[350] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center space-y-5 border-2 border-rose-500 shadow-2xl animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-3xl animate-bounce">
+              <AlertCircle size={36} />
             </div>
-            <h3 className="text-2xl font-bold text-red-600 leading-tight">🐮 ขณะนี้ร้านปิดให้บริการ</h3>
-            <p className="text-sm text-gray-700 leading-relaxed font-bold">
-              ขออภัยลูกค้าทุกท่านด้วยนะคะ <br />
-              ขณะนี้ทางร้าน <span className="text-red-500 text-base underline font-extrabold">"ปิดรับออเดอร์ชั่วคราว"</span> ค่ะ <br />
-              แต่ลูกค้ายังสามารถเลือกดูเมนูเครื่องดื่มต่างๆ ก่อนได้นะคะ 💖
+            <h3 className="text-xl font-bold text-rose-600 leading-tight">ขณะนี้ร้านปิดให้บริการ 🐮</h3>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              ขออภัยด้วยนะคะ ขณะนี้ทางร้านปิดรับออเดอร์ชั่วคราวค่ะ แต่สามารถเลือกชมเมนูก่อนได้นะคะ 💖
             </p>
-            <div className="space-y-3 pt-2">
-              <button 
-                onClick={() => setShowStoreClosedModal(false)}
-                className="w-full bg-primary text-white py-4 rounded-full text-sm font-bold shadow-md active:scale-95 hover:bg-opacity-95 transition-all"
-              >
-                รับทราบ (เข้าชมเมนูเครื่องดื่ม)
-              </button>
-            </div>
+            <button 
+              onClick={() => setShowStoreClosedModal(false)}
+              className="w-full bg-slate-900 text-white py-3.5 rounded-2xl text-xs font-bold shadow-md active:scale-95 transition-all"
+            >
+              รับทราบ (เข้าชมเมนูเครื่องดื่ม)
+            </button>
           </div>
         </div>
       )}
@@ -2468,25 +2994,25 @@ export default function App() {
       {/* Modal สั่งซื้อสำเร็จ */}
       {successModalData && (
         <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 animate-in zoom-in border-4 border-accent">
-            <div className="w-16 h-16 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto text-4xl animate-bounce">
-              <CheckCircle size={32}/>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center space-y-5 animate-in zoom-in-95 border-2 border-amber-800 shadow-2xl">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle size={28}/>
             </div>
-            <h3 className="text-2xl font-bold text-primary leading-tight">
+            <h3 className="text-xl font-bold text-slate-800 leading-tight">
               {successModalData.autoSent ? "🐮 สั่งซื้อสำเร็จแล้วค่ะ!" : "⚠️ ขั้นตอนสุดท้าย!"}
             </h3>
-            <p className="text-xs text-gray-700 leading-relaxed font-bold">
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
               {successModalData.autoSent 
-                ? "ระบบได้ส่งข้อมูลบิลเข้าไปในแชทห้องสั่งซื้อของคุณเรียบร้อยแล้วค่ะ สามารถกดปุ่มแชร์ด้านล่างเพื่อแชร์บิลเพิ่มเติมได้เลยค่ะ" 
-                : "รบกวนกดปุ่มสีเขียวด้านล่างเพื่อแชร์ข้อมูลบิลใบนี้ส่งตรงไปยัง LINE ของทางร้านนะคะ 💖"
+                ? "ระบบได้ส่งข้อมูลบิลเข้าไปในแชต LINE ของคุณเรียบร้อยแล้วค่ะ สามารถกดแชร์บิลเพิ่มเติมได้เลยค่ะ" 
+                : "รบกวนกดปุ่มสีเขียวด้านล่างเพื่อแชร์ข้อมูลบิลใบนี้ส่งตรงไปยัง LINE ของร้านนะคะ 💖"
               }
             </p>
 
-            <div className="bg-gray-50 p-4 rounded-2xl border border-dashed border-gray-300 text-left max-h-32 overflow-y-auto shadow-inner">
-              <pre className="text-[10px] text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{successModalData.text}</pre>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-dashed border-slate-300 text-left max-h-32 overflow-y-auto">
+              <pre className="text-[10px] text-slate-600 whitespace-pre-wrap font-sans leading-normal">{successModalData.text}</pre>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               <button 
                 onClick={async () => {
                   navigator.clipboard.writeText(successModalData.text);
@@ -2504,13 +3030,13 @@ export default function App() {
                     }
                   }
                 }}
-                className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-4 rounded-full text-base font-bold shadow-lg active:scale-95 hover:bg-green-600 transition-all"
+                className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-3.5 rounded-2xl text-xs font-bold shadow-md active:scale-95 hover:bg-emerald-600 transition-all"
               >
-                <Share2 size={20}/> แชร์บิลไปที่ LINE 💬
+                <Share2 size={16}/> แชร์บิลไปที่ LINE 💬
               </button>
               <button 
                 onClick={() => { setSuccessModalData(null); setView('myOrders'); }}
-                className="w-full text-gray-400 py-2 text-xs font-bold mt-2 hover:text-gray-600"
+                className="w-full text-slate-400 py-2 text-xs font-bold hover:text-slate-600"
               >
                 เสร็จสิ้น / ดูรายการคำสั่งซื้อ
               </button>
@@ -2522,38 +3048,60 @@ export default function App() {
       {/* Modal สรุปผลส่งของสำเร็จ (แอดมิน) */}
       {adminDeliverySuccessData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 animate-in zoom-in">
-            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto text-3xl"><CheckCircle size={32}/></div>
-            <h3 className="text-xl font-bold text-primary">อัปเดตสถานะสำเร็จ! 🛵</h3>
-            <p className="text-xs text-gray-500 leading-relaxed">ระบบบันทึกการส่งแล้ว คุณสามารถแชร์ข้อความนี้ให้ลูกค้าผ่านแอป LINE ได้</p>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center space-y-5 animate-in zoom-in-95">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto"><CheckCircle size={28}/></div>
+            <h3 className="text-lg font-bold text-slate-800">อัปเดตสถานะสำเร็จ! 🛵</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">บันทึกการส่งสำเร็จแล้ว สามารถแชร์แจ้งลูกค้าทาง LINE ได้เลยครับ</p>
 
-            <div className="bg-gray-50 p-4 rounded-2xl border border-dashed text-left max-h-40 overflow-y-auto">
-              <pre className="text-[10px] text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{adminDeliverySuccessData.text}</pre>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-dashed text-left max-h-36 overflow-y-auto">
+              <pre className="text-[10px] text-slate-600 whitespace-pre-wrap font-sans leading-normal">{adminDeliverySuccessData.text}</pre>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               <a 
                 href={`https://line.me/R/share?text=${encodeURIComponent(adminDeliverySuccessData.text)}`} 
                 target="_blank" 
                 rel="noreferrer"
-                className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-4 rounded-full text-sm font-bold shadow-md active:scale-95 hover:bg-green-600"
+                className="flex items-center justify-center gap-2 w-full bg-[#06C755] text-white py-3.5 rounded-2xl text-xs font-bold shadow-md active:scale-95 hover:bg-emerald-600"
               >
-                <Share2 size={18}/> แชร์สถานะผ่านแอป LINE
+                <Share2 size={16}/> แชร์สถานะผ่าน LINE
               </a>
-              <button onClick={() => setAdminDeliverySuccessData(null)} className="w-full text-gray-400 py-2 text-xs font-bold mt-2">ปิดหน้าต่าง</button>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(adminDeliverySuccessData.text);
+                  showAlert("คัดลอกข้อความสำเร็จ! นำไปวางในแชตลูกค้าได้เลยครับ");
+                }}
+                className="w-full bg-slate-100 text-slate-700 py-3 rounded-2xl text-xs font-bold active:scale-95 hover:bg-slate-200"
+              >
+                คัดลอกข้อความ
+              </button>
+              <button onClick={() => setAdminDeliverySuccessData(null)} className="w-full text-slate-400 py-1.5 text-xs font-bold">ปิดหน้าต่าง</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Modal ดาวน์โหลดรูปพรีวิว */}
+      {downloadPreview && (
+        <div className="fixed inset-0 bg-black/95 z-[250] flex flex-col items-center justify-center p-4 animate-in fade-in">
+          <p className="text-white font-bold mb-4 bg-emerald-600/90 px-4 py-2.5 rounded-2xl flex items-center gap-2 shadow-xl border border-emerald-400 text-xs text-center">
+            <Download size={16}/> กดค้างที่รูปภาพเพื่อบันทึกลงเครื่อง (Save Image)
+          </p>
+          <img src={downloadPreview} className="max-w-full max-h-[60vh] rounded-2xl shadow-2xl border-2 border-white/20 animate-in zoom-in-95 pointer-events-auto" alt="preview to save" />
+          <button onClick={() => setDownloadPreview(null)} className="mt-6 bg-white text-slate-800 px-6 py-3 rounded-2xl font-bold text-xs active:scale-95 shadow-md flex items-center gap-2">
+            <X size={16}/> ปิดหน้าต่าง
+          </button>
+        </div>
+      )}
+
       {/* Modal แอดมินล็อกอิน */}
       {showAdminModal && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-white p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
-            <h3 className="font-bold text-xl mb-8 text-primary">แอดมินเข้าสู่ระบบ</h3>
-            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-5 rounded-2xl mb-8 text-center text-3xl outline-none tracking-[0.5em] focus:border-accent focus:bg-white transition-all shadow-inner font-bold text-primary" placeholder="••••••" />
-            <div className="flex gap-4">
-              <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl hover:bg-gray-200 transition-colors">ยกเลิก</button>
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center">
+            <h3 className="font-bold text-lg mb-6 text-slate-900">แอดมินเข้าสู่ระบบ</h3>
+            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl mb-6 text-center text-2xl outline-none tracking-[0.4em] focus:border-amber-800 focus:bg-white transition-all shadow-inner font-bold text-slate-800" placeholder="••••••" />
+            <div className="flex gap-3">
+              <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold text-xs rounded-2xl hover:bg-slate-200 transition-colors">ยกเลิก</button>
               <button onClick={() => {
                 if(adminPassword === '570402') { 
                   localStorage.setItem('happycow_isAdmin', 'true');
@@ -2563,7 +3111,7 @@ export default function App() {
                   setAdminPassword(''); 
                 }
                 else { showAlert('รหัสผ่านไม่ถูกต้องครับ!'); setAdminPassword(''); }
-              }} className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl shadow-lg transition-all active:scale-95 hover:opacity-90">ยืนยัน</button>
+              }} className="flex-1 py-3 bg-slate-900 text-white font-bold text-xs rounded-2xl shadow-md transition-all active:scale-95 hover:bg-slate-800">ยืนยัน</button>
             </div>
           </div>
         </div>
@@ -2571,21 +3119,21 @@ export default function App() {
 
       {/* Custom Message Box */}
       {msgBox.isOpen && (
-        <div className="fixed inset-0 bg-black/70 z-[400] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm">
-          <div className="bg-white p-8 rounded-[2rem] w-full max-w-sm text-center shadow-2xl animate-in zoom-in-95">
+        <div className="fixed inset-0 bg-black/70 z-[400] flex items-center justify-center p-4 animate-in fade-in backdrop-blur-xs">
+          <div className="bg-white p-6 rounded-3xl w-full max-w-sm text-center shadow-2xl animate-in zoom-in-95">
             {msgBox.type === 'confirm' ? (
-              <AlertCircle size={48} className="text-orange-500 mx-auto mb-5" />
+              <AlertCircle size={42} className="text-amber-500 mx-auto mb-4" />
             ) : (
-              <CheckCircle size={48} className="text-green-500 mx-auto mb-5" />
+              <CheckCircle size={42} className="text-emerald-500 mx-auto mb-4" />
             )}
 
-            <h3 className="font-bold text-sm text-gray-800 mb-8 whitespace-pre-line leading-relaxed">{msgBox.message}</h3>
+            <h3 className="font-bold text-xs text-slate-800 mb-6 whitespace-pre-line leading-relaxed">{msgBox.message}</h3>
 
             {msgBox.type === 'confirm' ? (
-              <div className="flex gap-3">
+              <div className="flex gap-2.5">
                 <button 
                   onClick={() => setMsgBox({ ...msgBox, isOpen: false })} 
-                  className="flex-1 py-4 bg-gray-100 rounded-2xl text-xs font-bold text-gray-600 hover:bg-gray-200 transition-colors"
+                  className="flex-1 py-3 bg-slate-100 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors"
                 >
                   ยกเลิก
                 </button>
@@ -2594,9 +3142,9 @@ export default function App() {
                     if (msgBox.onConfirm) msgBox.onConfirm();
                     setMsgBox({ ...msgBox, isOpen: false });
                   }} 
-                  className="flex-1 py-4 bg-primary text-white rounded-2xl text-xs font-bold hover:bg-opacity-90 transition-opacity shadow-md"
+                  className="flex-1 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-opacity shadow-md"
                 >
-                  ยืนยันตกลง
+                  ตกลง
                 </button>
               </div>
             ) : (
@@ -2607,7 +3155,7 @@ export default function App() {
                       window.liff.closeWindow();
                   }
                 }} 
-                className="w-full py-4 bg-primary text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-opacity shadow-md"
+                className="w-full py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-opacity shadow-md"
               >
                 รับทราบ
               </button>
